@@ -1,0 +1,1412 @@
+---
+title: "SPINZ genomic analysis"
+author: "Laura T Phillips"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# set working directory to the location of the script
+knitr::opts_knit$set(root.dir = getwd())
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+
+# load packages
+library(knitr)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(patchwork)
+library(forcats)
+library(ggtree)
+library(ape)
+library(readxl)
+library(coda)
+library(cowplot)
+library(phytools)
+library(lubridate)
+library(waffle)
+library(RColorBrewer)
+library(dendextend)
+library(janitor)
+library(gtsummary)
+library(rcompanion)
+
+```
+## Print session info (package versions)
+```{r session_info}
+
+# print versions
+sessionInfo()
+
+```
+## Set colour palettes
+```{r}
+
+st_colours <- c('ST307' = '#a6cee3', 'ST2004' = '#fb9a99', 'ST983' = '#b2df8a','ST5856' = '#33a02c','ST101' = '#1f78b4' ,'ST985' = '#e31a1c', 'ST147' = '#fdbf6f','ST15' = '#ff7f00','ST1119' = '#cab2d6', 'Other' = '#fccde5')
+
+inf_location_colours <- c("0" = "#fde0dd", "1" = "#fa9fb5", "2" = "#f768a1", "3" = "#edf8fb", "4" = "#ccece6", "5" = "#99d8c9", "6" = "#66c2a4", "7" = "#2ca25f", "8+ days" = "#238b45", "Unknown" = "#bdbdbd")
+born_loc <- c("UTH born" = "#d94701", "Unknown" = "#bdbdbd", "Outborn" = "#fdae6b")
+
+clusters_cols <- c("1" = "#7fc97f", "2" = "#756bb1", "3" = "#fdc086", "4" = "#386cb0", "5" = "#f0027f", "6" = "#e41a1c", "Missing data" = "#999999", "NC" = "black")
+
+res_colours <- c("Bla ESBL" =  '#fa9fb5', "Aminoglycosides" = '#66c2a4', "Macrolides" = '#807dba', "Sulfonamide" = '#fc8d59', "Trimethoprim" = '#0570b0', "Yersiniabactin" = '#cccccc', 'NA' = 'white')
+
+all_res_colours <- c("Bla ESBL" =  '#fa9fb5', "Bla" = "#a6cee3", "Carbapenemase" = "#b2df8a", "Quinolone" = "#e31a1c", "Phenicol" = "#cab2d6", "Tetracycline" = "#ffff99", "Rifampicin" = "#b15928", "Aminoglycosides" = '#66c2a4', "Macrolides" = '#807dba', "Sulfonamide" = '#fc8d59', "Trimethoprim" = '#0570b0', "Yersiniabactin" = '#cccccc', 'NA' = 'white')
+
+```
+## Load data on included samples - Table S1
+```{r}
+
+kleb_clin <- read_tsv("tables/Supplementary_table_S1.tsv")
+
+# Create ST grouped column 
+kleb_clin <- kleb_clin %>%
+  add_count(`Sequence type`, name="ST_count") %>%
+  mutate(`Sequence type category` = ifelse(ST_count >=4, `Sequence type`, ifelse(`Sequence type` == "ST307-1LV", "ST307", 'Other'))) %>%
+  select(-ST_count)
+
+```
+## Wrangle resistance data for plotting
+```{r}
+## Specific resistance markers, for individual ST trees
+resistance_subset <- subset(kleb_clin, select = c(`Read accession`, bla_esbl_acquired, bla_carb_acquired, a_gly_acquired, mls_acquired, sul_acquired, tmt_acquired, yersiniabactin, `Sequence type category`)) %>% mutate_all(~ gsub("[\\^\\*]", "", sub("[\\^\\*]+$", "", .))) ##Removing any of the * or ^ indications, for the purpose of plotting
+
+## All resistance markers for tree of all isolates
+all_res <- subset(kleb_clin, select = c(`Read accession`, bla_esbl_acquired, bla_carb_acquired, bla_acquired, flq_acquired, phe_acquired, tet_acquired, rif_acquired, a_gly_acquired, mls_acquired, sul_acquired, tmt_acquired, yersiniabactin, `Sequence type category`)) %>% mutate_all(~ gsub("[\\^\\*]", "", sub("[\\^\\*]+$", "", .))) 
+
+# Split the values by ; to create a list of unique values 
+unique_vals_subset <- unique(unlist(strsplit(as.vector(as.matrix(resistance_subset[,2:7])), ";")))
+unique_vals_all <- unique(unlist(strsplit(as.vector(as.matrix(all_res[,2:12])), ";")))
+
+# List column names for subset and all resistance genes
+cols <- c("bla_esbl_acquired","bla_carb_acquired","a_gly_acquired","mls_acquired","sul_acquired","tmt_acquired")
+all_cols <- c("bla_esbl_acquired","bla_carb_acquired","bla_acquired", "flq_acquired", "phe_acquired", "tet_acquired", "rif_acquired", "a_gly_acquired","mls_acquired","sul_acquired","tmt_acquired")
+
+#Function to split columns by ; and give them their own column in a new dataframe
+split_cols_precisely <- function(df, cols) { 
+  unique_vals <- unique(unlist(strsplit(as.vector(as.matrix(df[, cols])), ";"))) # Trim white spaces and ensure unique values are correct 
+  unique_vals <- trimws(unique_vals) 
+  for (val in unique_vals) { 
+    val <- trimws(val) # Create columns and ensure exact matching 
+    df[[val]] <- apply(df[, cols], 1, function(x) ifelse(val %in% unlist(strsplit(as.character(x), ";")), val, NA)) # val NA
+  } 
+  return(df) 
+}
+
+# Run split function and remove original unsplit columns
+res_split_subset <- split_cols_precisely(resistance_subset, cols) %>% select(-one_of(cols)) 
+
+res_split_all <- split_cols_precisely(all_res, all_cols) %>% select(-one_of(all_cols)) 
+                                                                                                
+```
+## Table 1 data
+```{r}
+
+table_1 <- kleb_clin %>%
+  mutate(`Sequence type` = ifelse(`Sequence type` == "ST307-1LV", "ST307", `Sequence type`)) %>%
+  group_by(`Sequence type`, `K locus`, `K type`, `O locus`, `O type`) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Sequence type`) %>%
+  mutate(total_count = sum(count)) %>%
+  arrange(desc(total_count), desc(count)) %>%
+  select(-total_count)  # optional: remove the helper column
+
+table_1
+```
+## Table 2 
+```{r}
+
+summary_tab <- kleb_clin %>%
+  mutate(culture_date_status = if_else(!is.na(`Days to onset`), "Present", NA)) %>% ## This slightly changes now that its not based on the presence absence of the date in the 'culture date' column as some 'Days to onset' values were removed as discrepant. 
+  mutate(admission_date_status = if_else(!is.na(week_number), "Present", NA)) %>%
+  mutate(dis_date_status = if_else(!is.na(`Days to outcome`), "Present", NA)) %>%
+  mutate(`Birth location` = na_if(`Birth location`, "Unknown")) %>%
+  mutate(days_to_onset_cat = case_when(
+    is.na(`Days to onset`) ~ "Unknown",
+    `Days to onset` < 0  ~ "Unknown",   
+    `Days to onset` >= 8  ~ "8+ days",  
+    TRUE ~ as.character(`Days to onset`)))# %>% # Default category (optional)
+
+table_2 <- summary_tab %>%
+  mutate(`Neonate gender` = recode(`Neonate gender`,
+                                       `1` = "Female",
+                                       `2` = "Male")) %>%
+  mutate(`Outcome` = recode(`Outcome`,
+                                       `0` = "Discharged",
+                                       `1` = "Died")) %>%
+  mutate(days_to_onset_cat = case_when( # categorise continous variable `Days to onset`
+    is.na(`Days to onset`) ~ "Unknown",
+    `Days to onset` < 0  ~ "Unknown",   
+    `Days to onset` >= 8  ~ "8+ days",  
+    TRUE ~ as.character(`Days to onset`))) %>% # Default category (optional)
+  mutate(days_to_onset_cat = factor(as.character(days_to_onset_cat), levels = c("0", "1", "2", "3", "4", "5", "6", "7", "8+ days"))) %>%
+  select(`Neonate gender`, culture_date_status, admission_date_status, dis_date_status, `Outcome`, `Days to onset`, `Birth location`, `Study timepoint`, days_to_onset_cat, `Days to outcome`, `Days to onset`) %>%
+  tbl_summary(by = `Study timepoint`, 
+              include = c(`Neonate gender`,
+    culture_date_status,
+    admission_date_status,
+    dis_date_status,
+    `Outcome`,
+    `Days to outcome`,
+    `Birth location`,
+    days_to_onset_cat,
+    `Days to onset`,
+    `Study timepoint`),
+              sort = list(
+                `Neonate gender` ~ "frequency",
+                culture_date_status ~ "frequency",
+                dis_date_status ~ "frequency",
+                `Outcome` ~ "frequency",
+                `Birth location` ~ "frequency"),
+              #sort = all_categorical() ~ "frequency",
+              type = all_continuous() ~ "continuous2",
+              statistic = all_continuous() ~ c(
+      "{N_nonmiss}",
+      "{median} ({p25}, {p75})",
+      "{min}, {max}"
+    ),
+  label = list(
+      `Neonate gender` ~ "Neonate sex",
+      culture_date_status ~ "Culture Date",
+      admission_date_status ~ "Admission Date",
+      dis_date_status ~ "Outcome Date",
+      `Outcome` ~ "Clinical outcome",
+      `Days to outcome` ~ "Days to outcome from admission (summary)",
+      `Birth location` ~ "Birth location",
+      `Days to onset` ~ "Days to onset from admission (summary)",
+      days_to_onset_cat ~ "Days to onset from admission"
+    )) %>%
+  add_n(statistic = "{N_nonmiss}", footnote = T) %>% ## Only show count of non-missing values
+   bold_labels()
+
+table_2
+```
+## Figure 1
+```{r}
+# Load pathogenwatch tree of all genomes
+all_st_tree <- read.tree("output_trees/pathogenwatch_allst_nj_tree.nwk") %>% midpoint.root() 
+
+## Change negative branch lengths to 0
+all_st_tree$edge.length <- pmax(all_st_tree$edge.length, 0.0)
+
+all_tips <- as.data.frame(get_taxa_name(ggtree(all_st_tree))) %>% setNames('all_tips')
+all_data <- left_join(all_tips, kleb_clin, by=c('all_tips' = 'Read accession'))
+all_data[is.na(all_data)] <- 99
+
+
+# Create acquired resistance gene heatmap dataframe just for st307
+all_res_data <- left_join(all_tips, res_split_all, by = c("all_tips" = "Read accession"))
+
+all_res_data <- all_res_data %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate(across(everything(), ~na_if(., "-"))) %>%
+  select_if(~ !all(is.na(.))) %>%
+  arrange(factor(all_tips, levels = all_tips)) %>%
+  mutate_all(as.factor)
+
+allst_group_info <- data.frame(
+  column = colnames(all_res_data), 
+  group = c("None", "Yersiniabactin", "None", "Bla ESBL", "Bla ESBL", "Bla ESBL", "Carbapenemase", "Bla", "Bla", "Bla", "Bla", "Quinolone", "Quinolone", "Quinolone", "Quinolone", "Quinolone", "Phenicol", "Phenicol", "Tetracycline", "Tetracycline", "Rifampicin", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Macrolides", "Macrolides", "Sulfonamide", "Sulfonamide", "Trimethoprim", "Trimethoprim", "Trimethoprim", "Trimethoprim", "Trimethoprim", "Trimethoprim"))
+
+allst_res_data_long <- all_res_data %>% pivot_longer(cols = -c(`Sequence type category`, all_tips), names_to = "column", values_to = "Genes") %>% left_join(allst_group_info, by = "column") %>%
+   mutate(all_tips = factor(all_tips, levels = all_st_tree$tip.label)) %>% ## This is necessary in order to colour the heatmap by genes present but also the group they belong to
+   mutate(group = ifelse(!is.na(Genes), group, NA))
+
+allst_res_data_long$all_tips <- factor(allst_res_data_long$all_tips, levels = rev(unique(all_tips$all_tips))) ## Needed to flip the y axis of the heatmap, otherwise it is the opposite of the tree
+
+hm_allst <- allst_res_data_long %>%
+  filter(!is.na(group)) %>%
+  ggplot(aes(x = column, y = all_tips, fill = group)) + 
+               geom_tile() +
+facet_grid(. ~ group, scales = "free_x", space = "free_x") + 
+scale_fill_manual(name = "", values = all_res_colours, na.value = 'white', na.translate = FALSE) + 
+scale_x_discrete() + 
+  scale_y_discrete() +  
+  theme_minimal() +
+  labs(title = "", x = "") +
+  theme(axis.text.y = element_blank(), axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1), axis.title.y = element_blank(), legend.position = "top", strip.text = element_blank(), text = element_text(size = 22)) 
+
+all_t <- ggtree(all_st_tree) %<+% allst_res_data_long 
+all_t_tree <- all_t + geom_tippoint(aes(colour=`Sequence type category`), shape = 19, size = 4) +
+  scale_colour_manual(values = st_colours) + theme(legend.position = "top", legend.text = element_text(size = 22), legend.title = element_blank())
+
+all_t_tree <- all_t + geom_tiplab(size = 1)
+
+all_t_tree$data$`Sequence type category` <- factor(all_t_tree$data$`Sequence type category`, levels=c("ST307", "ST2004", "ST983", "ST5856", "ST101", "ST985", "ST147", "ST15", "ST1119", "Other"))
+
+fig1 <- plot_grid(all_t_tree, hm_allst, align = "h", axis = "bt", ncol = 2, nrow = 1, rel_widths = c(1, 2))
+
+
+```
+## Figure 2
+```{r}
+
+# Figure 2A timeline of infections for all STs
+timevcase_all_st <- kleb_clin %>% 
+  filter(!is.na(week_number)) %>% 
+  ggplot(aes(x = week_number, y = `Sequence type category`)) + 
+  geom_count(aes(color = as.factor(`Sequence type category`))) +
+  scale_colour_manual(values = st_colours, guide = "none") + 
+  labs(title = '',
+       x = 'Study week',
+       y = '') +
+  scale_y_discrete(name = "ST_cat") + 
+  geom_vline(xintercept = 31, colour = 'black') +
+  theme_minimal(base_size = 15) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), legend.title = element_blank(), text = element_text(size = 22),  axis.title.y = element_blank())
+
+# Count the number of observations each study month per ST 
+monthly_st_counts <- kleb_clin %>%
+  filter(!is.na(month_number)) %>%
+  group_by(month_number, `Sequence type category`) %>% 
+  summarise(total_count = n(), .groups = "drop") 
+
+# Calculate the total number of isolates per month across all ST categories
+monthly_counts <- monthly_st_counts %>%
+  group_by(month_number) %>%
+  summarise(month_total = sum(total_count))
+
+# Plot a bar chart of the number of infections by ST per study month
+bar_chart_st <- ggplot(monthly_st_counts, aes(x = month_number, y = total_count, fill = `Sequence type category`)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+  scale_x_continuous(breaks = seq(min(monthly_st_counts$month_number, na.rm = TRUE), 
+                                  max(monthly_st_counts$month_number, na.rm = TRUE), 
+                                  by = 2)) +  # Show ticks every 2 months
+  labs(fill = "") +
+   ylim(0, 70) +
+  scale_fill_manual(values = st_colours) +
+  labs(title = "",
+       x = "Study month", y = "") +
+  geom_vline(xintercept = 7.5, colour = 'black') +
+  theme_minimal() +
+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), legend.title = element_blank(),  axis.title.y = element_blank(), text = element_text(size = 22))
+
+# Add value labels for total number of infections per study month for all STs combined
+bar_chart_st2 <- bar_chart_st +
+  geom_text(data = monthly_counts,
+            aes(x = month_number, y = month_total, label = month_total),
+            vjust = -0.5, size = 5,
+            inherit.aes = FALSE)
+
+
+
+fig2 <- timevcase_all_st / bar_chart_st2 + plot_annotation(tag_levels = "A")
+fig2
+```
+## Figure 3 A & B
+```{r}
+
+# Aggregate the data to get the monthly counts per ST by location of birth 
+monthly_counts_loc <- kleb_clin %>%
+  mutate(`Birth location` = factor(`Birth location`, levels = c("UTH born", "Outborn", "Unknown")),
+         `Sequence type category` = factor(`Sequence type category`, levels = c("ST307", "ST2004", "ST101", "ST983", "ST985", "ST15", "ST147", "ST1119", "Other"))) %>%
+  filter(!is.na(month_number)) %>%
+  group_by(month_number, `Birth location`, `Sequence type category`) %>%
+  summarise(total_count = n(), .groups = "drop") %>%
+  mutate(`Birth location` = fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown"))
+
+# Split the dataframe into a list of dataframes, one per ST category
+split_data_loc <- split(droplevels(monthly_counts_loc), droplevels(monthly_counts_loc)$`Sequence type category`)
+
+# For each ST dataframe, calculate the % contribution by month
+split_data_loc <- lapply(split_data_loc, function(df_sub) {
+  df_sub %>%
+    group_by(month_number) %>%
+    mutate(percent = total_count / sum(total_count) * 100)
+})
+
+# create a list of plots, one for each ST
+plot_list_loc <- lapply(names(split_data_loc), function(cat) {
+  df_sub <- split_data_loc[[cat]]
+  custom_y_max <- 100
+  show_legend <- cat == "ST307" # Use the legend from the ST307 plot as the only one with all the variables included
+  legend_pos <- if (show_legend) "right" else "none"
+
+  ggplot(df_sub, aes(x = month_number, y = percent, fill = `Birth location`)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label=total_count), position = position_stack(vjust = 0.5), angle=90, color="black", size=4)+
+    scale_y_continuous(limits = c(0, custom_y_max), labels = scales::percent_format(scale = 1)) +
+    scale_x_continuous(breaks = seq(1, 17, by = 2), limits = c(0, 18)) + 
+    scale_fill_manual(values = born_loc, name = "Birth location") +
+    labs(title = cat, x = NULL, y = NULL) +
+    theme_minimal() +
+    theme(legend.position = legend_pos, axis.text.x = element_text(angle = 45, hjust = 1), text = element_text(size = 22))
+})
+
+# Combine all plots into a multi-panel layout
+loc_plot <- wrap_plots(plotlist = plot_list_loc, ncol = 2) + 
+  plot_layout(guides = "collect", axis_titles = "collect") &
+  labs(x = "Study month", y = "Percentage (%)") 
+
+fig3a <- loc_plot + plot_annotation(title = 'A') & theme(text = element_text(size = 22))
+
+# Aggregate the data to get the monthly counts by day of onset 
+monthly_counts_onset <- kleb_clin %>%
+  filter(!is.na(month_number)) %>%
+  mutate(dto_category = case_when(
+    is.na(`Days to outcome`) ~ "Unknown",
+    `Days to outcome` < 0  ~ "Unknown",   
+    `Days to outcome` >= 8  ~ "8+ days",  
+    TRUE ~ as.character(`Days to outcome`)  # Default category (optional)
+  )) %>%
+  group_by(month_number, dto_category, `Sequence type category`) %>% ##`Days to outcome`
+  summarise(total_count = n()) %>%
+  mutate(`Sequence type category` = factor(`Sequence type category`, levels = c("ST307", "ST2004", "ST101", "ST983", "ST985", "ST15", "ST147", "ST1119", "Other"))
+  ) 
+
+# Split the dataframe into a list of dataframes, one per ST category
+split_data_onset <- split(droplevels(monthly_counts_onset), droplevels(monthly_counts_onset)$`Sequence type category`)
+
+# For each ST dataframe, calculate the % contribution by month
+split_data_onset <- lapply(split_data_onset, function(df_sub) {
+  df_sub %>%
+    group_by(month_number) %>%
+    mutate(percent = total_count / sum(total_count) * 100)
+})
+
+# Create a list of plots, one per ST
+plot_list_onset <- lapply(names(split_data_onset), function(cat) {
+  df_sub <- split_data_onset[[cat]]
+  custom_y_max <- 100
+  show_legend <- cat == "ST307"
+  legend_pos <- if (show_legend) "right" else "none"
+  
+  ggplot(df_sub, aes(x = month_number, y = percent, fill = dto_category)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label=total_count), position = position_stack(vjust = 0.5), angle=90, color="black", size=4)+
+    scale_y_continuous(limits = c(0, custom_y_max), labels = scales::percent_format(scale = 1)) +
+    scale_x_continuous(breaks = seq(1, 17, by = 2), limits = c(0, 18)) + 
+    scale_fill_manual(values = inf_location_colours, name = "Day of onset") +
+    labs(title = cat, x = NULL, y = NULL) +
+    theme_minimal() +
+    theme(legend.position = legend_pos, axis.text.x = element_text(angle = 45, hjust = 1), text = element_text(size = 22))
+})
+
+
+# Combine all plots into a multi-panel layout
+onset_plot <- wrap_plots(plotlist = plot_list_onset, ncol = 2) + 
+  plot_layout(guides = "collect", axis_titles = "collect") &
+  labs(x = "Study month", y = "Percentage (%)") 
+
+fig3b <- onset_plot + plot_annotation(title = 'B') & theme(text = element_text(size = 22))
+
+fig3a
+fig3b
+```
+## Figure 4
+```{r}
+############### K-type ################################
+
+# Only consider K types of those STs with >4 cases
+prev_tab <- kleb_clin %>%
+  filter(!(`Sequence type category` %in% c("Other"))) 
+
+k_tab <- table(prev_tab$`K type`, prev_tab$`Study timepoint`)
+fisher.test(k_tab, simulate.p.value = TRUE, B = 100000) ## p<0.001
+
+k_prev <- prop.table(k_tab, margin = 2) # Proportion of each K type 
+
+k_percentages_matrix <- matrix(
+  c(0.87111111, 0.08988764,
+    0.00000000, 0.00000000,
+    0.01777778, 0.05617978,
+    0.03555556, 0.43820225,
+    0.02222222, 0.00000000,
+    0.00000000, 0.04494382,
+    0.01777778, 0.00000000,
+    0.03555556, 0.24719101,
+    0.00000000, 0.00000000,
+    0.00000000, 0.12359551),
+  ncol = 2,    # Two columns for Baseline and Post-implementation
+  byrow = TRUE, # Fill by row
+  dimnames = list(
+    c("Capsule null", "K15", "K17", "K23", "K39", "K54", "K64",
+      "unknown (KL102)", "unknown (KL110)", "unknown (KL127)"),
+    c("Baseline", "Post_implementation")
+  )
+)
+
+
+# Convert matrix to a data frame
+k_df_percentages <- as.data.frame(k_percentages_matrix) 
+
+# Remove cases of 0% prevalence at both baseline and post-implementation
+k_df_percentages <- k_df_percentages %>% filter(!(Baseline == 0 & Post_implementation == 0))
+
+# Add capsule type as a column (it's currently row names)
+k_df_percentages$Capsule_Type <- rownames(k_df_percentages) 
+
+
+k_df_long <- k_df_percentages %>%
+  pivot_longer(
+    cols = c(Baseline, Post_implementation), # Columns to pivot
+    names_to = "Timepoint",                # New column for timepoint names
+    values_to = "Percentage"               # New column for percentage values
+)
+
+k_df_long$Capsule_Type <- factor(k_df_long$Capsule_Type,
+                               levels = k_df_percentages %>% arrange(desc(Baseline)) %>% pull(Capsule_Type))
+
+
+k_df_long$Percentage_Display <- k_df_long$Percentage * 100
+
+# To ensure 'Baseline' comes before 'Post_implementation' in the legend and grouping
+k_df_long$Timepoint <- factor(k_df_long$Timepoint, levels = c("Baseline", "Post_implementation"))
+
+k_prev_plot <- ggplot(k_df_long, aes(x = Capsule_Type, y = Percentage_Display, fill = Timepoint)) +
+  geom_bar(stat = "identity", position = "dodge") + # 'dodge' creates grouped bars
+  geom_text(aes(label = sprintf("%.1f", Percentage_Display)), # Add percentage labels
+            position = position_dodge(width = 0.9), # Adjust position to fit dodged bars
+            vjust = -0.5, size = 5) + # vjust for vertical adjustment, size for text
+  labs(
+    title = "K-type",
+    x = "",
+    y = "Percentage (%)",
+    fill = "Timepoint"
+  ) +
+  scale_fill_manual(values = c("Baseline" = "#67a9cf", "Post_implementation" = "#ef8a62"), labels = c("Baseline", "Post-implementation")) + # Custom colors
+  theme_classic() + # A clean theme
+  theme(
+    axis.text.x = element_text(angle = 45,  hjust= 1), # Rotate x-axis labels
+    #plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold title
+    legend.position = "right", # Position the legend
+    text = element_text(size = 22)
+  ) +
+  ylim(0, max(k_df_long$Percentage_Display) * 1.15)  # Adjust y-axis limit to accommodate labels
+
+
+############### O-type ################################
+
+o_tab <- table(prev_tab$`O type`, prev_tab$`Study timepoint`)
+fisher.test(o_tab, simulate.p.value = TRUE, B = 100000) ## p<0.001
+
+o_prev <- prop.table(o_tab, margin = 2)
+
+percentages_matrix_o <- matrix(
+  c(0.00000000, 0.12359551,  #O13
+    0.01777778, 0.05617978,  #O1αβ,2α
+    0.02222222, 0.04494382,  #O1αβ,2β
+    0.19555556, 0.07865169,  #O2α
+    0.76444444, 0.69662921,  #O2β
+    0.00000000, 0.00000000,  #O3γ
+    0.00000000, 0.00000000), #O4
+  ncol = 2,    # Still two columns for Baseline and Post-implementation
+  byrow = TRUE, # Fill by row
+  dimnames = list(
+    c("O13", "O1αβ,2α", "O1αβ,2β", "O2α", "O2β", "O3γ", "04"), # Your new capsule types
+    c("Baseline", "Post_implementation") # Column names remain the same
+  )
+)
+
+
+# Convert matrix to a data frame
+df_percentages_o <- as.data.frame(percentages_matrix_o)
+
+# Remove cases of 0% prevalence at both baseline and post-implementation
+df_percentages_o <- df_percentages_o %>% filter(!(Baseline == 0 & Post_implementation == 0))
+
+# Add capsule type as a column (it's currently row names)
+df_percentages_o$Capsule_Type <- rownames(df_percentages_o)
+
+df_o_long <- df_percentages_o %>%
+  pivot_longer(
+    cols = c(Baseline, Post_implementation), # Columns to pivot
+    names_to = "Timepoint",                # New column for timepoint names
+    values_to = "Percentage"               # New column for percentage values
+)
+
+df_o_long$Capsule_Type <- factor(df_o_long$Capsule_Type,
+                               levels = df_percentages_o %>% arrange(desc(Baseline)) %>% pull(Capsule_Type))
+
+
+df_o_long$Percentage_Display <- df_o_long$Percentage * 100
+
+# To ensure 'Baseline' comes before 'Post_implementation' in the legend and grouping
+df_o_long$Timepoint <- factor(df_o_long$Timepoint, levels = c("Baseline", "Post_implementation"))
+
+o_prev_plot <- ggplot(df_o_long, aes(x = Capsule_Type, y = Percentage_Display, fill = Timepoint)) +
+  geom_bar(stat = "identity", position = "dodge") + # 'dodge' creates grouped bars
+  geom_text(aes(label = sprintf("%.1f", Percentage_Display)), # Add percentage labels
+            position = position_dodge(width = 0.9), # Adjust position to fit dodged bars
+            vjust = -0.5, size = 5) + # vjust for vertical adjustment, size for text
+  labs(
+    title = "O-type",
+    x = "",
+    y = "Percentage (%)",
+    fill = "Timepoint"
+  ) +
+  scale_fill_manual(values = c("Baseline" = "#67a9cf", "Post_implementation" = "#ef8a62"), labels = c("Baseline", "Post-implementation")) + # Custom colors
+  theme_classic() + # A clean theme
+  theme(
+    axis.text.x = element_text(angle = 45,  hjust= 1), # Rotate x-axis labels
+    #plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold title
+    legend.position = "right", # Position the legend
+    text = element_text(size = 22)
+  ) +
+  ylim(0, max(df_o_long$Percentage_Display) * 1.15)  # Adjust y-axis limit to accommodate labels
+
+
+##################### Acquired AMR genes #####################
+
+# Count number of AMR genes for each Abx 
+amr_genes_recoded <- kleb_clin %>%
+  mutate(a_gly_acquired_r = if_else(a_gly_acquired == "-", 0, 
+                                  if_else(str_count(a_gly_acquired, ";") > 0, 
+                                          str_count(a_gly_acquired, ";") + 1, 1)),
+  flq_acquired_r = if_else(flq_acquired == "-", 0, 
+                                  if_else(str_count(flq_acquired, ";") > 0, 
+                                          str_count(flq_acquired, ";") + 1, 1)),
+  mls_acquired_r = if_else(mls_acquired == "-", 0, 
+                                  if_else(str_count(mls_acquired, ";") > 0, 
+                                          str_count(mls_acquired, ";") + 1, 1)),
+  Phe_acquired_r = if_else(phe_acquired == "-", 0, 
+                                  if_else(str_count(phe_acquired, ";") > 0, 
+                                          str_count(phe_acquired, ";") + 1, 1)),
+  Rif_acquired_r = if_else(rif_acquired == "-", 0, 
+                                  if_else(str_count(rif_acquired, ";") > 0, 
+                                          str_count(rif_acquired, ";") + 1, 1)),
+  sul_acquired_r = if_else(sul_acquired == "-", 0, 
+                                  if_else(str_count(sul_acquired, ";") > 0, 
+                                          str_count(sul_acquired, ";") + 1, 1)),
+  tet_acquired_r = if_else(tet_acquired == "-", 0, 
+                                  if_else(str_count(tet_acquired, ";") > 0, 
+                                          str_count(tet_acquired, ";") + 1, 1)),
+  tmt_acquired_r = if_else(tmt_acquired == "-", 0, 
+                                  if_else(str_count(tmt_acquired, ";") > 0, 
+                                          str_count(tmt_acquired, ";") + 1, 1)),
+  bla_acquired_r = if_else(bla_acquired == "-", 0, 
+                                  if_else(str_count(bla_acquired, ";") > 0, 
+                                          str_count(bla_acquired, ";") + 1, 1)),
+  bla_esbl_acquired_r = if_else(bla_esbl_acquired == "-", 0, 
+                                  if_else(str_count(bla_esbl_acquired, ";") > 0, 
+                                          str_count(bla_esbl_acquired, ";") + 1, 1)),
+  bla_carb_acquired_r = if_else(bla_carb_acquired == "-", 0, 
+                                  if_else(str_count(bla_carb_acquired, ";") > 0, 
+                                          str_count(bla_carb_acquired, ";") + 1, 1))
+  )
+
+# Summarise mean gene count by timepoint
+amr_genes_tab <- amr_genes_recoded %>%
+  filter(`Study timepoint` != "unknown") %>%
+  group_by(`Study timepoint`) %>%
+  summarise(across(
+    .cols = c("a_gly_acquired_r", "flq_acquired_r", "mls_acquired_r", "Phe_acquired_r", "Rif_acquired_r", "sul_acquired_r", "tet_acquired_r", "tmt_acquired_r", "bla_acquired_r", "bla_esbl_acquired_r", "bla_carb_acquired_r"),  # or use c(count1, count2, ..., count10)
+    .fns = list(mean = mean),
+    .names = "{.col}_{.fn}"
+  ))
+
+# Reshape data for plotting
+amr_genes_long <- amr_genes_tab %>%
+  pivot_longer(
+    cols = c("a_gly_acquired_r_mean", "flq_acquired_r_mean", "mls_acquired_r_mean", "Phe_acquired_r_mean", "Rif_acquired_r_mean", "sul_acquired_r_mean", "tet_acquired_r_mean", "tmt_acquired_r_mean", "bla_acquired_r_mean", "bla_esbl_acquired_r_mean", "bla_carb_acquired_r_mean"),
+    names_to = "genes",
+    values_to = "mean"
+  )
+
+amr_mean_plot <- ggplot(amr_genes_long, aes(x = genes, y = mean, fill = `Study timepoint`)) +
+  geom_bar(stat = "identity", position = "dodge") +
+   labs(
+    title = "Mean number of acquired AMR resistance genes",
+    x = "",
+    y = "Mean",
+    fill = "Timepoint"
+  ) +
+  scale_fill_manual(values = c("Baseline" = "#67a9cf", "Post-implementation" = "#ef8a62"), labels = c("Baseline", "Post-implementation")) + # Custom colors
+  scale_x_discrete(labels = c("a_gly_acquired_r_mean" = "Aminoglycoside", "Col_acquired_r_mean" = "Colistin", "Fcyn_acquired_r_mean" = "Fosfomycin", "flq_acquired_r_mean" = "Fluoroquinolone", "Gly_acquired_r_mean" = "glycopeptide", "mls_acquired_r_mean" = "Macrolide", "Phe_acquired_r_mean" = "Phenicol", "Rif_acquired_r_mean" = "Rifampicin", "sul_acquired_r_mean" = "Sulfonamide", "tet_acquired_r_mean" = "Tetracycline", "Tgc_acquired_r_mean" = "Tigecycline", "tmt_acquired_r_mean" = "Trimethoprim", "bla_acquired_r_mean" = "Bla", "bla_esbl_acquired_r_mean" = "Bla-ESBL", "bla_carb_acquired_r_mean" = "Carbapenem")) +
+  theme_classic() + # A clean theme
+  theme(
+    axis.text.x = element_text(angle = 60,  hjust= 1), # Rotate x-axis labels
+    #plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold title
+    legend.position = "right", # Position the legend
+    text = element_text(size = 22)
+  ) 
+
+k_o_prev_plots <- k_prev_plot / o_prev_plot / amr_mean_plot + plot_annotation(tag_levels = "A") + plot_layout(guides = "collect")
+
+k_o_prev_plots
+
+```
+## Phylogenetic trees of most prevalent ST's
+```{r}
+st307 <- read.tree("output_trees/final_st307_bootstrapped_tree.tre") %>% midpoint.root() 
+
+st307_tips <- as.data.frame(get_taxa_name(ggtree(st307))) %>% setNames('st307_tips')
+st307_t <- ggtree(st307) #+ geom_tiplab(size = 1, align=F) 
+
+st101 <- read.tree("output_trees/final_st101_bootstrapped_tree.tre") %>% midpoint.root() 
+
+st101_tips <- as.data.frame(get_taxa_name(ggtree(st101))) %>% setNames('tips')
+st101_t <- ggtree(st101) #+ geom_tiplab(size = 3, align = F)
+
+st2004 <- read.tree("output_trees/final_st2004_bootstrapped_tree.tre") %>% midpoint.root() 
+
+st2004_tips <- as.data.frame(get_taxa_name(ggtree(st2004))) %>% setNames('tips')
+st2004_t <- ggtree(st2004) #+ geom_treescale(x = 0, y = 0, width = 5, fontsize = 3, linesize = 1)
+
+```
+## Figure 5 & supplementary figure 3 and supplementary figure 4
+```{r}
+######### ST307 #########
+
+# Filter data to just ST307
+st307_kleb <- kleb_clin %>% 
+  filter(`Sequence type category` == 'ST307') 
+
+# Load cluster data ST307
+st307_clusters <- read_csv("output_clusters/clusters_data_st307.csv") 
+
+
+ordered_data307 <- st307_kleb %>%
+  left_join(st307_clusters %>% select(id, Cluster), by = c(`Read accession` = "id")) %>% ########
+  mutate(Cluster = case_when(
+    grepl("ERR15165515", `Read accession`) ~ "NC", # Label only non-clustered sequence
+    is.na(Cluster) ~ "Missing data",  # Assign "Missing data" to NA values
+    TRUE ~ as.character(Cluster)                    # Keep other cluster values unchanged
+  )) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = st307_tips$st307_tips)) %>%
+  arrange(`Read accession`) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = rev(levels(`Read accession`)))) #this is essential to flip the y axis as atm its the opposite way round to the tree labels
+
+ 
+plot307 <- ordered_data307 %>%
+  ggplot(aes(x = week_number, y = `Read accession`)) +
+  geom_point(aes(colour = as.factor(Cluster)), size = 2.5) + ##shape = onset_group, size = 2.5
+  scale_colour_manual(values = clusters_cols, name = "Cluster number") +
+  #scale_shape_manual(values = c("Early" = 1, "Late" = 17, "Unknown" = 4), na.translate = TRUE, name = "Onset category") +
+  labs(title = '',
+       x = 'Study week') +
+  scale_x_continuous(limits = c(0, 75), breaks = seq(0, 75, by = 4)) +
+  theme_minimal() +
+  geom_vline(xintercept = 31, colour = 'black') +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), axis.text.y = element_blank(), axis.title.y = element_blank(), panel.grid.minor.x = element_blank(),plot.title = element_text(hjust = 1), text = element_text(size=22), legend.position = "right")
+
+
+# Create acquired resistance gene heatmap dataframe just for st307
+st307_res_data <- left_join(st307_tips, res_split_subset, by = c("st307_tips" = "Read accession"))
+
+st307_res_data[] <- lapply(st307_res_data, as.factor)
+st307_res_data <- st307_res_data %>%
+  mutate_if(is.factor, as.character) %>%
+  select_if(~ !all(is.na(.))) %>%
+  arrange(factor(st307_tips, levels = st307_tips)) %>%
+  select(-all_of(c("-", "strA.v1", "strB.v1"))) %>% ## These genes are not relevant to resistance, and also columns are removed if cases of * or ^ have the same profile as the gene without it
+  mutate_all(~ na_if(., '-')) %>% 
+  mutate_all(as.factor)
+
+# Create groups for grouping acquired resistane genes into antibiotic specific 
+st307_group_info <- data.frame(
+  column = colnames(st307_res_data), 
+  group = c("None", "Yersiniabactin", "None", "Bla ESBL", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Macrolides", "Macrolides", "Sulfonamide", "Sulfonamide", "Trimethoprim", "Trimethoprim", "Trimethoprim" ))
+
+
+st307_res_data_long <- st307_res_data %>% pivot_longer(cols = -c(`Sequence type category`, st307_tips), names_to = "column", values_to = "Genes") %>% left_join(st307_group_info, by = "column") %>%
+  mutate(st307_tips = factor(st307_tips, levels = st307$tip.label)) %>% ## This is necessary in order to colour the heatmap by genes present but also the group they belong to
+  mutate(group = ifelse(!is.na(Genes), group, NA))
+
+st307_res_data_long$st307_tips <- factor(st307_res_data_long$st307_tips, levels = rev(unique(st307_tips$st307_tips))) ## Needed to flip the y axis of the heatmap, otherwise it is the opposite of the tree
+
+hm_plot <- ggplot(st307_res_data_long, aes(x = column, y = st307_tips, fill = group)) + 
+               geom_tile() +
+scale_fill_manual(name = "", values = res_colours, na.value = 'white', na.translate = FALSE) +
+scale_x_discrete() + 
+  scale_y_discrete() +  
+  theme_minimal() +
+  labs(title = "", x = "") +
+  theme(axis.text.y = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.y = element_blank(), text = element_text(size=22), legend.position = "top") 
+
+# Label tree tips with cluster number
+st307_t$data <- left_join(st307_t$data, ordered_data307, by = c("label" = "Read accession")) 
+st307_t_labs <- st307_t + geom_tippoint(aes(color=Cluster), size=2) + scale_colour_manual(values = clusters_cols, name = "") +
+  guides(color = "none") + theme_tree2(text = element_text(size=15))
+
+fig5a <- plot_grid(st307_t_labs, hm_plot, plot307, align = "h", axis = "bt", rel_widths = c(1, 1, 2), nrow = 1)
+
+
+######### supplementary figure 3 ############
+
+# Clusters based on isolates with a culture date available only
+st307_clusters_cult <- read_csv("output_clusters/clusters_data_st307_culturedate_only.csv")
+
+ordered_data307_cult <- st307_kleb %>%
+  left_join(st307_clusters_cult %>% select(id, Cluster), by = c(`Read accession` = "id")) %>% ########
+  mutate(Cluster = case_when(
+    grepl("ERR15165515", `Read accession`) ~ "NC", # Removes non-clustered sequence
+    Cluster == 2 ~ "6",
+    Cluster == 4 ~ "3",
+    Cluster == 3 ~ "2",
+    Cluster == 5 ~ "4",
+    Cluster == 6 ~ "5",
+    is.na(Cluster) ~ "Missing data",  # Assign "Missing data" to NA values
+    TRUE ~ as.character(Cluster)                    # Keep other cluster values unchanged
+  )) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = st307_tips$st307_tips)) %>%
+  arrange(`Read accession`) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = rev(levels(`Read accession`)))) #this is essential to flip the y axis as atm its the opposite way round to the tree labels
+
+
+plot307_a <- ordered_data307_cult %>%
+  #mutate(onset_group = factor(onset_group, levels = c("UTH born", "Outborn", "unknown"))) %>%
+  ggplot(aes(x = week_number, y = `Read accession`)) +
+  geom_point(aes(colour = as.factor(Cluster))) +
+  scale_colour_manual(values = clusters_cols, name = "Cluster number") +
+  labs(title = '',
+       x = 'Study month') +
+  scale_x_continuous(limits = c(0, 75), breaks = seq(0, 75, by = 4)) +
+  theme_minimal() +
+  geom_vline(xintercept = 31, colour = 'black') +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), axis.text.y = element_blank(), axis.title.y = element_blank(), panel.grid.minor.x = element_blank(),plot.title = element_text(hjust = 1), text = element_text(size=22), legend.position = "right")
+
+## supplementary figure 3
+Figure_s3b <- plot307_a / plot307 + plot_annotation(tag_levels = "A")
+
+
+######### ST101 #########
+
+st101_kleb <- kleb_clin %>% 
+  filter(`Sequence type category` == 'ST101')
+
+### Load cluster data - this is based on SNP dists from coresnpfilter set to 80%
+st101_clusters <- read_csv("output_clusters/clusters_data_st101.csv") 
+
+st101_res_data <- left_join(st101_tips, res_split_subset, by = c("tips" = "Read accession"))
+st101_res_data <- st101_res_data %>%
+  select_if(~ any(. != 0)) %>%
+  select(-all_of(c("-", "strB.v1", "strA.v1"))) %>%
+  mutate_all(~ na_if(., '-')) %>% 
+  mutate_all(as.factor)
+
+
+st101_group_info <- data.frame(
+  column = colnames(st101_res_data), 
+  group = c("None", "Yersiniabactin", "None", "Bla ESBL", "Bla ESBL", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Macrolides", "Macrolides", "Sulfonamide", "Sulfonamide", "Trimethoprim", "Trimethoprim"))
+
+st101_res_data_long <- st101_res_data %>% pivot_longer(cols = -c(`Sequence type category`, tips), names_to = "column", values_to = "Genes") %>% left_join(st101_group_info, by = "column") %>%
+  mutate(tips = factor(tips, levels = st101$tip.label)) %>% ## This is necessary in order to colour the heatmap by genes present but also the group they belong to
+  mutate(group = ifelse(!is.na(Genes), group, NA))
+
+st101_res_data_long$tips <- factor(st101_res_data_long$tips, levels = rev(unique(st101_tips$tips))) ## Needed to flip the y axis of the heatmap, otherwise it is the opposite of the tree
+
+ordered_data101 <- st101_kleb %>%
+  left_join(st101_clusters %>% select(id, Cluster), by = c(`Read accession` = "id")) %>%
+  mutate(Cluster = case_when(
+    grepl("ERR6350131|ERR6350206|ERR6350791", `Read accession`) ~ "NC",   ## This removes the one sequence that isnt clustered
+                          is.na(Cluster) ~ "Missing data", 
+                          TRUE ~ as.character(Cluster))) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = st101_tips$tips)) %>%
+  arrange(`Read accession`) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = rev(levels(`Read accession`)))) #this is essential to flip the y axis as atm its the opposite way round to the tree labels
+
+
+plot101 <- ordered_data101 %>%
+  mutate(onset_group = factor(`Birth location`, levels = c("UTH born", "Outborn", "unknown"))) %>%
+  ggplot(aes(x = week_number, y = `Read accession`)) +
+  geom_point(aes(colour = as.factor(Cluster)), size = 2.5) + ## shape = onset_group, 
+  scale_colour_manual(values = clusters_cols, name = "Cluster number") +
+  labs(title = '',
+       x = 'Study week',
+       y = '') +
+  scale_x_continuous(limits = c(0, 75), breaks = seq(0, 75, by = 4)) +
+  theme_minimal() +
+  geom_vline(xintercept = 31, colour = 'black') +
+   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), text = element_text(size=22), axis.text.y = element_blank(), axis.title.y = element_blank(), panel.grid.minor.x = element_blank(),plot.title = element_text(hjust = 1)) 
+
+
+hm101 <- ggplot(st101_res_data_long, aes(x = column, y = tips, fill = group)) + 
+               geom_tile() +
+scale_fill_manual(name = "", values = res_colours, na.value = 'white', na.translate = FALSE) + 
+scale_x_discrete() + 
+  scale_y_discrete() +  
+  theme_minimal() + 
+  labs(title = "", x = "") +
+  theme(axis.text.y = element_blank(), text = element_text(size=22), axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.y = element_blank(), legend.position = "none")
+
+st101_t$data <- left_join(st101_t$data, ordered_data101, by = c("label" = "Read accession")) 
+
+
+st101_t_labs <- st101_t + geom_tippoint(aes(color=Cluster), size=4) + scale_colour_manual(values = clusters_cols, name = "") +
+  guides(color = "none") + theme_tree2(text = element_text(size=15))
+
+
+fig5b <- plot_grid(st101_t_labs, hm101, plot101, align = "h", axis = "bt", rel_widths = c(1, 1, 2), nrow = 1)
+
+######### ST2004 #########
+
+st2004_kleb <- kleb_clin %>% 
+  filter(`Sequence type category` == 'ST2004')
+
+st2004_clusters <- read_csv("output_clusters/clusters_data_st2004.csv") 
+
+st2004_res_data <- left_join(st2004_tips, res_split_subset, by = c("tips" = "Read accession"))
+st2004_res_data <- st2004_res_data %>%
+  select_if(~ any(. != 0)) %>%
+  select(-all_of(c("-", "strB.v1", "strA.v1"))) %>%
+  mutate_all(~ na_if(., '-')) %>% 
+  select_if(~ !all(is.na(.))) %>% 
+  mutate_all(as.factor)
+
+
+st2004_group_info <- data.frame(
+  column = colnames(st2004_res_data), 
+  group = c("None", "None", "Bla ESBL", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Sulfonamide", "Trimethoprim", "Trimethoprim"))
+
+st2004_res_data_long <- st2004_res_data %>% pivot_longer(cols = -c(`Sequence type category`, tips), names_to = "column", values_to = "Genes") %>% left_join(st2004_group_info, by = "column") %>%
+  mutate(tips = factor(tips, levels = st2004$tip.label)) %>% ## This is necessary in order to colour the heatmap by genes present but also the group they belong to
+  mutate(group = ifelse(!is.na(Genes), group, NA))
+
+st2004_res_data_long$tips <- factor(st2004_res_data_long$tips, levels = rev(unique(st2004_tips$tips))) ## Needed to flip the y axis of the heatmap, otherwise it is the opposite of the tree
+
+ordered_data2004 <- st2004_kleb %>%
+  left_join(st2004_clusters %>% select(id, Cluster), by = c(`Read accession` = "id")) %>%
+  mutate(Cluster = case_when(Cluster == "2" ~ "2",  # Keep existing 2 values unchanged
+                           is.na(week_number) ~ "Missing data", ## remaining st2004 NAs should just be unclustered 
+                           is.na(Cluster) ~ "NC",
+                           TRUE ~ "1")) %>%               ## all other ST's are in 1 cluster per st
+  mutate(`Read accession` = factor(`Read accession`, levels = st2004_tips$tips)) %>%
+  arrange(`Read accession`) %>%
+  mutate(`Read accession` = factor(`Read accession`, levels = rev(levels(`Read accession`)))) #this is essential to flip the y axis as atm its the opposite way round to the tree labels
+
+plot2004 <- ordered_data2004 %>%
+  ggplot(aes(x = week_number, y = `Read accession`)) +
+  geom_point(aes(colour = as.factor(Cluster)), size = 2.5) + 
+  scale_colour_manual(values = clusters_cols, name = "Cluster number") +
+  labs(title = '',
+       x = 'Study week',
+       y = '') +
+  scale_x_continuous(limits = c(0, 75), breaks = seq(0, 75, by = 4)) +
+  theme_minimal() +
+  geom_vline(xintercept = 31, colour = 'black') +
+   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), text = element_text(size=22), axis.text.y = element_blank(), axis.title.y = element_blank(), panel.grid.minor.x = element_blank(),plot.title = element_text(hjust = 1)) 
+
+
+hm2004 <- ggplot(st2004_res_data_long, aes(x = column, y = tips, fill = group)) + 
+               geom_tile() +
+#facet_wrap(~ group,  scales = "free_x", nrow = 1, ncol = 10) + 
+scale_fill_manual(name = "", values = res_colours, na.value = 'white', na.translate = FALSE) + 
+scale_x_discrete() + 
+  scale_y_discrete() +  
+  #scale_y_reverse() +
+  theme_minimal() + 
+  labs(title = "", x = "") +
+  theme(axis.text.y = element_blank(), text = element_text(size=22), axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), axis.title.y = element_blank(), legend.position = "none")
+
+st2004_t$data <- left_join(st2004_t$data, ordered_data2004, by = c("label" = "Read accession")) 
+
+st2004_t_labs <- st2004_t + geom_tippoint(aes(color=Cluster), size=4) + scale_colour_manual(values = clusters_cols, name = "") +
+  guides(color = "none") + theme_tree2(text = element_text(size=15))
+
+fig5c <- plot_grid(st2004_t_labs, hm2004, plot2004, align = "h", axis = "bt", rel_widths = c(1, 1, 2), nrow = 1)
+
+######### 'Other' STs #########
+
+other_st_kleb <- kleb_clin %>%
+  filter(!`Sequence type category` %in% c('ST307', 'ST101', 'ST2004')) %>%
+  filter(!is.na(week_number)) %>%
+  mutate(Cluster = case_when(`Sequence type category` == 'Other' ~ "NC", 
+                           TRUE ~ "1"))                ## all other ST's are in 1 cluster per st - refer to cluster outputs in output_clusters folder
+
+other_st_kleb <- other_st_kleb %>%
+  arrange(Cluster, `Read accession`) %>%  # Sort isolates by Cluster first
+  mutate(`Read accession` = factor(`Read accession`, levels = unique(`Read accession`))) 
+
+other_st_kleb_ids <- other_st_kleb %>%
+  arrange(Cluster, `Read accession`) %>%  # Sort isolates by Cluster first
+  mutate(`Read accession` = factor(`Read accession`, levels = unique(`Read accession`))) %>% # Convert to ordered factor  
+  select(`Read accession`, Cluster)
+
+other_res_data <- left_join(other_st_kleb_ids, res_split_subset) %>% mutate_all(as.factor)
+
+other_res_data <- other_res_data %>%
+  mutate_if(is.factor, as.character) %>%
+  select_if(~ any(. != 0)) %>%
+  select(-all_of(c("-", "strB.v1", "strA.v1"))) %>%
+  mutate_all(~ na_if(., '-'))
+
+group_info_all_genes <- data.frame(
+  column = colnames(other_res_data), 
+  group = c("None", "None", "Yersiniabactin", "None", "Bla ESBL", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Aminoglycosides", "Macrolides", "Macrolides", "Sulfonamide", "Sulfonamide", "Trimethoprim", "Trimethoprim", "Trimethoprim", "Trimethoprim"))
+  
+other_res_data_long <- other_res_data %>% pivot_longer(cols = -c(`Sequence type category`, `Read accession`, Cluster), names_to = "column", values_to = "Genes") %>% left_join(group_info_all_genes, by = "column") %>%
+  mutate(group = ifelse(!is.na(Genes), group, NA)) %>%
+  filter(!is.na(`Read accession`)) 
+  
+plot_others <- other_st_kleb %>%
+  ggplot(aes(x = week_number, y = `Read accession`)) +
+  geom_point(aes(colour = as.factor(Cluster)), size = 2.5) + ##shape = onset_group, 
+  scale_colour_manual(values = clusters_cols, name = "Cluster number") +
+  labs(title = '',
+       x = 'Study week',
+       y = '') +
+  scale_x_continuous(limits = c(0, 75), breaks = seq(0, 75, by = 4)) +
+  theme_minimal() +
+  geom_vline(xintercept = 31, colour = 'black') +
+  guides(colour = guide_legend(title = "Cluster number")) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), text = element_text(size=22), axis.text.y = element_blank(), plot.title = element_text(hjust = 1, vjust = -1), legend.position = "right") 
+
+plot_others <- plot_others +
+  facet_grid(rows = vars(`Sequence type category`), scales = "free_y", space = "free_y") +
+  theme(strip.text.y = element_text(size = 17, angle = 0), strip.placement = "outside")
+
+other_res_data_long_sort <- other_res_data_long %>%
+  arrange(Cluster, `Read accession`) %>%  # Sort isolates by Cluster first
+  mutate(`Read accession` = factor(`Read accession`, levels = unique(`Read accession`))) # Convert to ordered factor  
+
+
+other_st_amr <- ggplot(other_res_data_long_sort, aes(x = column, y = `Read accession`, fill = group)) + 
+               geom_tile() +
+scale_fill_manual(name = "", values = res_colours, na.value = 'white', na.translate = FALSE) + 
+scale_x_discrete() + 
+  scale_y_discrete() +  
+  facet_grid(rows = vars(`Sequence type category`), scales = "free_y", space = "free_y") +
+  theme_minimal() + 
+  labs(title = "", x = "") +
+  theme(text = element_text(size=22), axis.text.y = element_blank(), axis.text.x = element_text(angle = 75, hjust = 1, vjust = 1), axis.title.y = element_blank(), legend.position = "none", strip.text.y = element_blank()) 
+
+
+fig_s4 <- plot_grid(other_st_amr, plot_others, align = "h", axis = "bt", ncol = 2, nrow = 1)
+fig_s4
+
+fig5_all <- fig5a / fig5b /fig5c + plot_layout(guides = "collect", heights = c(2, 1, 1)) + plot_annotation(tag_levels = "A") & theme(text = element_text(size = 22))
+fig5_all
+
+```
+## Stats and summary numbers 
+```{r}
+# Final number of high-quality K. pneumoniae genomes after all filtering
+nrow(kleb_clin)
+
+# Number of STs, with one case of ST307-1LV grouped into ST307 
+kleb_clin %>% mutate(`Sequence type` = ifelse(`Sequence type` == "ST307-1LV", "ST307", `Sequence type`)) %>% group_by(`Sequence type`) %>% count() %>% nrow() 
+
+# Proportions of each ST (of ≥4 genomes)
+ST_prop <- kleb_clin %>%
+  count(`Sequence type category`) %>% # counts occurrences of each ST
+  mutate(proportion = n / sum(n)*100) # calculate proportion for each ST
+
+# Count of K locus & type and O locus & type combinations, per ST
+ko_tab <- kleb_clin %>%
+  group_by(`Sequence type category`, `O locus`, `O type`, `K locus`, `K type`) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Sequence type category`) %>%
+  mutate(total_count = sum(count)) %>%
+  arrange(desc(total_count), desc(count)) %>%
+  select(-total_count)  # optional: remove the helper column
+
+
+# Create additional columns which categorize 'days to onset' 
+kleb_clin <- kleb_clin %>%
+  mutate(days_to_onset_cat = case_when(
+    is.na(`Days to onset`) ~ "Unknown",
+    `Days to onset` < 0  ~ "Unknown",   
+    `Days to onset` >= 8  ~ "8+ days",  
+    TRUE ~ as.character(`Days to onset`))) %>%
+  mutate(onset_earlylate = case_when(
+    days_to_onset_cat %in% c("0", "1", "2") ~ "Early",
+    days_to_onset_cat == "Unknown" ~ "Unknown",
+    TRUE ~ "Late"
+  )) 
+  
+# Columns to select from dataframe of acquired resistance and virulence genes
+acq_gene_columns <- c("a_gly_acquired", "flq_acquired", "mls_acquired", "phe_acquired", "rif_acquired", "sul_acquired", "tet_acquired", "tmt_acquired", "bla_acquired", "bla_esbl_acquired", "bla_carb_acquired", "yersiniabactin")
+
+# Summary counts and proportions of cases with acquired resistance for each Abx, and virulence genes 
+resistance_count <- kleb_clin %>%
+  summarise(across(
+    all_of(acq_gene_columns),
+    ~sum(. != "-"),
+    .names = "Genomes_with_acquired_resistance_genes_in_{.col}"
+  )) %>%
+  pivot_longer(everything(),
+               names_to = "Column",
+               values_to = "RowCount") %>%
+  mutate(Proportion = round(RowCount / nrow(kleb_clin)*100, 1))
+
+# Number of isolates with associated clinical metadata
+kleb_clin %>% filter(!is.na(week_number)) %>% nrow() 
+
+kleb_clin %>% filter(!is.na(`Days to onset`)) %>% nrow() ## This is currently 263 (less than the number of neonates with a reported culture date of 277) as days to onset was <0 for a number of cases, so these were regarded as NA's 
+
+# Create a filtered dataframe of only isolates collected at study baseline 
+stats_tab_subset_b <- kleb_clin %>%
+  filter(!is.na(`Days to onset`)) %>%
+  filter(`Study timepoint` == "Baseline") 
+# Create a filtered dataframe of only isolates collected post-implementation 
+stats_tab_subset_pi <- kleb_clin %>%
+  filter(!is.na(`Days to onset`)) %>%
+  filter(`Study timepoint` == "Post-implementation") 
+
+# Days to onset summary stats for baseline cases
+summary(stats_tab_subset_b$`Days to onset`)
+
+# Days to onset summary stats for post-implementation cases
+summary(stats_tab_subset_pi$`Days to onset`)
+
+# Contingency table of days to onset for each timepoint
+stats_tab_filt <- kleb_clin %>% filter(!days_to_onset_cat == "Unknown")
+t <- table(stats_tab_filt$days_to_onset_cat, stats_tab_filt$`Study timepoint`)
+# Evaluate if there is a statistically significant association between number of days to onset and study timepoint (baseline vs post-implementation)
+fisher.test(t, simulate.p.value = TRUE) #p<0.05
+
+# Number of neonates with a recorded location of birth
+kleb_clin %>% filter(!`Birth location` == "Unknown") %>% nrow() 
+
+# Total neonates UTH born and outborn 
+birth_loc_prop <- kleb_clin %>%
+  filter(`Birth location` != "Unknown") %>% 
+  count(`Birth location`) %>%                  
+  mutate(proportion = n / sum(n)*100)
+
+# Contingency table of birth location for both timepoints
+t1 <- table(kleb_clin$`Birth location`, kleb_clin$`Study timepoint`)
+# Evaluate if there is a statistically significant association between birth location and timepoint (baseline vs post-implementation)
+chisq.test(t1) #0.06
+
+# Number of samples taken within the baseline and post-implementation periods
+table(kleb_clin$`Study timepoint`)
+
+##########################################
+
+# Calculating the total, mean and median number of infections per ST, per study timepoint
+# Baseline
+weekly_infection_stats_baseline <- function(data, sequence_list, max_week = 31) {
+  results <- lapply(sequence_list, function(st) {
+    
+    # Filter and summarize baseline data
+    weekly_stats <- data %>%
+      filter(`Sequence type category` == st) %>%
+      filter(week_number <= max_week) %>%
+      group_by(week_number, `Sequence type category`) %>%
+      summarise(total_count = n(), .groups = "drop")
+    
+    # Create full week sequence
+    min_week <- min(weekly_stats$week_number, na.rm = TRUE)
+    max_week <- max(weekly_stats$week_number, na.rm = TRUE)
+    full_weeks <- data.frame(week_number = seq(min_week, max_week))
+  
+    
+    # Join and fill missing weeks with 0
+    weekly_stats <- full_weeks %>%
+      mutate(`Sequence type category` = st) %>%
+      left_join(weekly_stats, by = c("week_number", "Sequence type category")) %>%
+      mutate(total_count = ifelse(is.na(total_count), 0, total_count))
+    
+    # 🔍 Print the weekly_stats for inspection
+    cat("\n--- Weekly Stats for:", st, "---\n")
+    print(weekly_stats)
+    
+    # Return summary stats
+   data.frame(
+      Sequence = st,
+      Sum = sum(weekly_stats$total_count),
+      Median = median(weekly_stats$total_count),
+      Mean = mean(weekly_stats$total_count),
+      Week_Range = paste(min_week, max_week, sep = "–")
+    #),
+    #weekly_data = weekly_stats
+   )
+  })
+  
+  #names(results) <- sequence_list
+  #return(results)
+  
+  do.call(rbind, results)
+}
+
+sequence_list_baseline <- c('ST307', 'ST101', 'ST2004', 'ST985', 'ST147')
+baseline_stats <- weekly_infection_stats_baseline(kleb_clin, sequence_list_baseline)
+
+## Post-implementation
+weekly_infection_stats_pi <- function(data, sequence_list, max_week = 31) {
+  results <- lapply(sequence_list, function(st) {
+    
+    # Filter and summarize baseline data
+    weekly_stats <- data %>%
+      filter(`Sequence type category` == st) %>%
+      filter(week_number > max_week) %>%
+      group_by(week_number, `Sequence type category`) %>%
+      summarise(total_count = n(), .groups = "drop")
+    
+    # Create full week sequence
+    min_week <- min(weekly_stats$week_number, na.rm = TRUE)
+    max_week <- max(weekly_stats$week_number, na.rm = TRUE)
+    full_weeks <- data.frame(week_number = seq(min_week, max_week))
+    
+    # Join and fill missing weeks with 0
+    weekly_stats <- full_weeks %>%
+      mutate(`Sequence type category` = st) %>%
+      left_join(weekly_stats, by = c("week_number", "Sequence type category")) %>%
+      mutate(total_count = ifelse(is.na(total_count), 0, total_count))
+    
+    # Return summary stats
+    data.frame(
+      Sequence = st,
+      Sum = sum(weekly_stats$total_count),
+      Median = median(weekly_stats$total_count),
+      Mean = mean(weekly_stats$total_count),
+      Week_Range = paste(min_week, max_week, sep = "–")
+    )
+  })
+  
+  do.call(rbind, results)
+}
+
+sequence_list_pi <- c('ST307', 'ST101', 'ST2004', 'ST983', 'ST15')
+pi_stats <- weekly_infection_stats_pi(kleb_clin, sequence_list_pi)
+
+
+##################### BIRTH LOCATION #####################
+
+# Association between ST and location of birth
+tab1 <- table(kleb_clin$`Sequence type category`, kleb_clin$`Birth location`)
+fisher.test(tab1, simulate.p.value = TRUE) #p<0.001
+
+# Among neonates with a known location of birth (unknowns removed), the proportion born in each location for each ST
+birth_loc_prop_st <- kleb_clin %>%
+  filter(`Birth location` != "Unknown") %>% 
+  group_by(`Sequence type category`, `Birth location`) %>%
+  summarise(total_count = n()) %>%               
+  mutate(proportion = total_count / sum(total_count)*100)
+
+
+##################### DAY TO ONSET #####################
+
+# Remove those with an unknown number of days to infection onset
+onset_filt <- kleb_clin %>%
+  filter(!is.na(`Days to onset`)) 
+
+## Table of days to onset category and ST 
+tab2 <- table(onset_filt$onset_earlylate, onset_filt$`Sequence type category`) ##########
+fisher.test(tab2, simulate.p.value=TRUE) 
+
+# Total neonates with early or late onset infection 
+onset_cat_prop_st <- kleb_clin %>%
+  filter(onset_earlylate != "Unknown") %>% 
+  group_by(`Sequence type category`, onset_earlylate) %>%
+  summarise(total_count = n()) %>%               
+  mutate(proportion = total_count / sum(total_count)*100)
+
+onset_loc_filt <- kleb_clin %>%
+  filter(onset_earlylate != "Unknown" & `Birth location` != "Unknown") #%>% 
+
+tab3 <- table(onset_loc_filt$`Birth location`, onset_loc_filt$onset_earlylate)
+chisq.test(tab3) #NS
+
+```
+## Clustering summary numbers
+```{r}
+
+# Combine cluster data for each relevant ST 
+clusters_df <- rbind(ordered_data307, ordered_data101, ordered_data2004, other_st_kleb) %>% mutate(onset_earlylate = case_when(
+    `Days to onset` %in% c("0", "1", "2") ~ "Early",
+    `Days to onset` == "Unknown" ~ "Unknown",
+    is.na(`Days to onset`) ~ "Unknown",
+    TRUE ~ "Late"
+  )) 
+
+clusters_stats <- clusters_df %>%
+  group_by(`Sequence type category`, Cluster) %>%
+  filter(!Cluster %in% c('NC', 'Missing data')) %>%
+  summarise(
+    earliest_date = min(week_number, na.rm = TRUE),
+    latest_date = max(week_number, na.rm = TRUE),
+    count = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(cluster_duration = as.numeric(latest_date - earliest_date)) 
+
+summary(clusters_stats)
+
+# Group non-clustered and clustered genomes to look at association with onset of infection category (early vs late)
+summary_nc <- clusters_df %>%
+  filter(Cluster == "NC",
+         !onset_earlylate %in% c("Unknown")) %>%
+  group_by(onset_earlylate) %>%
+  summarise(nc_count = n(), .groups = "drop")
+
+#number of clustered sequences in the early and late onset category
+summary_clustered <- clusters_df %>%
+  filter(!Cluster %in% c("Missing data", "NC"),
+         !onset_earlylate %in% c("Unknown")) %>%
+  group_by(onset_earlylate) %>%
+  summarise(total_count = sum(!is.na(Cluster)), .groups = "drop")
+
+summary_2x2 <- full_join(summary_clustered, summary_nc, by = "onset_earlylate") %>%
+  mutate(
+    Clustered = total_count,
+    Non_clustered = nc_count,
+    .keep = "unused"
+  ) %>%
+  select(onset_earlylate, Clustered, Non_clustered)
+
+table_matrix <- as.matrix(summary_2x2[, -1])
+rownames(table_matrix) <- summary_2x2$onset_earlylate
+chisq.test(table_matrix) #NS
+
+# Consider clustered cases only, is there any difference in the number with early/late onset infection in the baseline vs post-implementation study periods
+clustered_onsetcat_timepoint <- clusters_df %>%
+  filter(!Cluster %in% c("Missing data", "NC"),
+         !onset_earlylate %in% c("Unknown"),
+         !is.na(`Study timepoint`)) 
+
+tab4 <- table(clustered_onsetcat_timepoint$`Study timepoint`, clustered_onsetcat_timepoint$onset_earlylate)
+chisq.test(tab4) 
+
+# Consider clustered cases only, is there any difference in the number born in the study hospital vs outborn, in the baseline vs post-implementation study periods
+clustered_loc_timepoint <- clusters_df %>%
+  filter(!Cluster %in% c("Missing data", "NC"),
+         !`Birth location` %in% c("Unknown"),
+         !is.na(`Study timepoint`)) 
+
+tab5 <- table(clustered_loc_timepoint$`Study timepoint`, clustered_loc_timepoint$`Birth location`)
+chisq.test(tab5) 
+
+
+## Proportion of cases belonging to clusters, or attributable to clusters in the baseline period and the post-implementation period` 
+
+summary_nc_timepoint <- clusters_df %>%
+  filter(Cluster == "NC",
+         !is.na(`Study timepoint`)) %>%
+  group_by(`Study timepoint`) %>%
+  summarise(nc_count = n(), .groups = "drop")
+
+
+summary_clustered_timepoint <- clusters_df %>%
+  filter(!Cluster %in% c("Missing data", "NC"),
+         !is.na(`Study timepoint`)) %>%
+  group_by(`Study timepoint`) %>%
+  summarise(total_count = sum(!is.na(Cluster)), .groups = "drop")
+
+
+
+summary_2x2_timepoint <- full_join(summary_clustered_timepoint, summary_nc_timepoint, by = "Study timepoint") %>%
+  mutate(
+    Clustered = total_count,
+    Non_clustered = nc_count,
+    .keep = "unused"
+  ) %>%
+  select(`Study timepoint`, Clustered, Non_clustered)
+
+table_matrix_timepoint <- as.matrix(summary_2x2_timepoint[, -1])
+rownames(table_matrix_timepoint) <- summary_2x2_timepoint$`Study timepoint`
+chisq.test(table_matrix_timepoint) # <0.01
+
+## For calculating attributable to a cluster, need to include cluster number
+summary_clustered_timepoint_att <- clusters_df %>%
+  filter(!Cluster %in% c("Missing data", "NC"),
+         !is.na(`Study timepoint`)) %>%
+  group_by(`Study timepoint`, Cluster, `Sequence type category`) %>%
+  summarise(total_count = sum(!is.na(Cluster)), .groups = "drop")
+
+
+summary_2x2_timepoint_attributable <- summary_clustered_timepoint_att %>%
+  group_by(`Study timepoint`) %>%
+  summarise(
+    included = sum(total_count),
+    not_included = n(),  # number of cluster labels per timepoint
+    total = included - not_included,
+    .groups = "drop"
+  )
+
+summary_2x2_timepoint_att <- full_join(summary_2x2_timepoint_attributable, summary_nc_timepoint, by = "Study timepoint") %>%
+  mutate(
+    Clustered = total,
+    Non_clustered = nc_count + not_included, #The not included are the index cases for each cluster, which belong in the non-clustered category when looking at attributable to a cluster
+    .keep = "unused"
+  ) %>%
+  select(`Study timepoint`, Clustered, Non_clustered)
+
+table_matrix_timepoint_att <- as.matrix(summary_2x2_timepoint_att[, -1])
+rownames(table_matrix_timepoint_att) <- summary_2x2_timepoint_att$`Study timepoint`
+chisq.test(table_matrix_timepoint_att) 
+
+
+## Comparison of clustered cases across baseline and post-implementation period for ST307, ST2004 and ST101
+
+st_clusters <- clusters_df %>% ## change ST of interest  - summarises all clusters for that ST
+  filter(`Sequence type category` == c("ST307")) %>% ## change ST of interest  - summarizes all clusters for that ST
+  group_by(Cluster, week_number) %>%
+  summarise(weekly_count = n(), .groups = "drop") %>%
+  group_by(Cluster) %>%
+  summarise(
+    median_weekly_count = median(weekly_count),
+    week_range = paste0(min(week_number), "–", max(week_number)),
+    cluster_total_count = sum(weekly_count),
+    .groups = "drop"
+  )
+
+
+## Load SNV distance data for each ST - renamed to new ENA labels, and extract SNV distance summaries 
+dist_mat_307 <- read.csv("output_snv_distances/st307_snp_dists.csv", row.names = 1, check.names = FALSE) %>% as.matrix()
+
+cluster_post_imp_st307 <- clusters_df %>%
+  filter(`Sequence type category` == "ST307", Cluster %in% c("3", "5")) %>%
+  pull(`Read accession`)
+
+cluster_baseline_st307 <- clusters_df %>%
+  filter(`Sequence type category` == "ST307", Cluster %in% c("1", "2", "4")) %>%
+  pull(`Read accession`)
+
+# extract pairwise distances
+dist_values_st307 <- dist_mat_307[as.character(cluster_post_imp_st307), as.character(cluster_baseline_st307)]
+dist_vector_st307 <- as.vector(dist_values_st307)
+
+# calculate stats for the SNP distances between baseline and post-implementation clustered sequences
+summary_stats_st307 <- data.frame(
+  min = min(dist_vector_st307, na.rm = TRUE),
+  max = max(dist_vector_st307, na.rm = TRUE),
+  median = median(dist_vector_st307, na.rm = TRUE),
+  mean = mean(dist_vector_st307, na.rm = TRUE)
+)
+
+# snp-dists matrix ST101
+dist_mat_101 <- read.csv("output_snv_distances/st101_snp_dists.csv", row.names = 1, check.names = FALSE) %>% as.matrix()
+
+cluster_post_imp_st101 <- clusters_df %>%
+  filter(`Sequence type category` == "ST101", Cluster %in% c("2")) %>%
+  pull(`Read accession`)
+
+cluster_baseline_st101 <- clusters_df %>%
+  filter(`Sequence type category` == "ST101", Cluster %in% c("1")) %>%
+  pull(`Read accession`)
+
+# extract pairwise distances
+dist_values_st101 <- dist_mat_101[as.character(cluster_post_imp_st101), as.character(cluster_baseline_st101)]
+dist_vector_st101 <- as.vector(dist_values_st101)
+
+# calculate stats for the SNP distances between baseline and post-implementation clustered sequences
+summary_stats_st101 <- data.frame(
+  min = min(dist_vector_st101, na.rm = TRUE),
+  max = max(dist_vector_st101, na.rm = TRUE),
+  median = median(dist_vector_st101, na.rm = TRUE),
+  mean = mean(dist_vector_st101, na.rm = TRUE)
+)
+
+# snp-dists matrix ST2004
+dist_mat_2004 <- read.csv("output_snv_distances/st2004_snp_dists.csv", row.names = 1, check.names = FALSE) %>% as.matrix()
+
+cluster_post_imp_st2004 <- clusters_df %>%
+  filter(`Sequence type category` == "ST2004", Cluster %in% c("1")) %>%
+  pull(`Read accession`)
+
+cluster_baseline_st2004 <- clusters_df %>%
+  filter(`Sequence type category` == "ST2004", Cluster %in% c("2")) %>%
+  pull(`Read accession`)
+
+# extract pairwise distances
+dist_values_st2004 <- dist_mat_2004[as.character(cluster_post_imp_st2004), as.character(cluster_baseline_st2004)]
+dist_vector_st2004 <- as.vector(dist_values_st2004)
+
+# calculate stats for the SNP distances between baseline and post-implementation clustered sequences
+summary_stats_st2004 <- data.frame(
+  min = min(dist_vector_st2004, na.rm = TRUE),
+  max = max(dist_vector_st2004, na.rm = TRUE),
+  median = median(dist_vector_st2004, na.rm = TRUE),
+  mean = mean(dist_vector_st2004, na.rm = TRUE)
+)
+
+
+```
