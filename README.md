@@ -1,4 +1,6 @@
-# Genomic analysis to assess the impact of an infection control bundle on K. pneumoniae populations causing sepsis in neonates in an ICU in Zambia. This paper uses data collected as part of the SPINZ study. 
+# Klebsiella pneumoniae genomics for SPINZ study
+
+Genomic analysis to assess the impact of an infection control bundle on _K. pneumoniae_ populations causing sepsis in neonates in an ICU in Zambia. This paper uses data collected as part of the SPINZ study. 
 
 This repository includes data and code from the paper 'XXXX'
 
