@@ -1408,11 +1408,6 @@ cluster_count_knownonset <- clusters_df %>%
 cluster_count_knownbirthloc <- clusters_df %>% 
   filter(`Birth location`!="Unknown") %>%
   group_by(clusterid) %>% count()
-
-clusters_df %>% 
-  group_by(clusterid, `Birth location`, onset_earlylate) %>% 
-  count() %>% 
-  filter(clusterid != "Missing data" & clusterid !="NC") %>% 
   
 clusters_df %>% 
   filter(clusterid != "Missing data" & clusterid !="NC") %>% 
@@ -1445,6 +1440,56 @@ post <- clusters_df %>% filter(`Study timepoint`!="Baseline") %>%
 pre / post + plot_layout(guides="collect")
 
 ggsave("pre_post_cluster_traits.pdf", width=6, height=9)
+
+
+clusters_df %>% group_by(`Study timepoint`, onset_earlylate) %>% count()
+
+clusters_df %>% 
+  filter(clusterid != "Missing data" & clusterid !="NC") %>% 
+  mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
+  mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
+  mutate(days=if_else(`Days to onset`>=7, 7, `Days to onset`)) %>%
+  ggplot(aes(x=`Birth location`, y=days)) + 
+  geom_violin() + 
+  geom_jitter(aes(col=onset_earlylate), alpha=0.3) + 
+  facet_wrap(~clusterid) +
+  scale_color_manual(values=c("grey", "maroon", "navy")) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle=60, hjust=1)) 
+
+
+pre <- clusters_df %>% filter(`Study timepoint`=="Baseline") %>%
+  filter(clusterid != "Missing data" & clusterid !="NC") %>% 
+  mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
+  mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
+  mutate(days=if_else(`Days to onset`>=7, 7, `Days to onset`)) %>%
+  ggplot(aes(x=`Birth location`, y=days)) + 
+  geom_violin() + 
+  geom_jitter(aes(col=onset_earlylate), alpha=0.3) + 
+  facet_wrap(~clusterid) +
+  scale_color_manual(values=c("grey", "maroon", "navy")) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle=60, hjust=1)) + ggtitle("Baseline")
+
+
+post <- clusters_df %>% filter(`Study timepoint`!="Baseline") %>%
+  filter(clusterid != "Missing data" & clusterid !="NC") %>% 
+  mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
+  mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
+  mutate(days=if_else(`Days to onset`>=7, 7, `Days to onset`)) %>%
+  ggplot(aes(x=`Birth location`, y=days)) + 
+  geom_violin() + 
+  geom_jitter(aes(col=onset_earlylate), alpha=0.3) + 
+  facet_wrap(~clusterid) +
+  scale_color_manual(values=c("grey", "maroon", "navy")) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle=60, hjust=1)) + ggtitle("Post-implementation")
+
+
+pre / post + plot_layout(guides="collect")
+
+ggsave("pre_post_cluster_days.pdf", width=6, height=9)
+
 ```
 
 ``` {r}
