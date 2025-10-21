@@ -1467,10 +1467,10 @@ pre <- clusters_df %>%
   mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
   mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
   mutate(days=if_else(`Days to onset`>=7, 7, `Days to onset`)) %>%
-  ggplot(aes(x=`Birth location`, y=days)) + 
+  ggplot(aes(x=`Birth location`, y=`Days to onset`)) + 
   geom_violin() + 
   geom_jitter(aes(col=onset_earlylate), alpha=0.3) + 
-  facet_wrap(~clusterid) +
+  facet_wrap(~clusterid, scales="free_y") +
   scale_color_manual(values=c("grey", "maroon", "navy")) + 
   theme_bw() + 
   theme(axis.text.x = element_text(angle=60, hjust=1)) + ggtitle("Baseline")
@@ -1482,10 +1482,10 @@ post <- clusters_df %>%
   mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
   mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
   mutate(days=if_else(`Days to onset`>=7, 7, `Days to onset`)) %>%
-  ggplot(aes(x=`Birth location`, y=days)) + 
+  ggplot(aes(x=`Birth location`, y=`Days to onset`)) + 
   geom_violin() + 
   geom_jitter(aes(col=onset_earlylate), alpha=0.3) + 
-  facet_wrap(~clusterid) +
+  facet_wrap(~clusterid, scales="free_y") +
   scale_color_manual(values=c("grey", "maroon", "navy")) + 
   theme_bw() + 
   theme(axis.text.x = element_text(angle=60, hjust=1)) + ggtitle("Post-implementation")
@@ -2042,5 +2042,51 @@ plot <- ggplot(coords, aes(xmin = start, xmax = end, y = genome, fill = gene, la
   facet_wrap(~ genome, scales = "free", ncol = 1) #+
   #scale_fill_brewer(palette = "Set3") +
   theme_genes()
+
+```
+
+
+``` {genes}
+library(genoPlotR)
+
+seg1 <- read_dna_seg_from_genbank("KL102.gbk")
+seg2 <- read_dna_seg_from_genbank("KL102_disrupted.gbk")
+
+# colour the gene arrows
+seg2$col <- "navy"
+seg1$col <- "navy"
+
+seg1$fill <- "navy"
+seg2$fill <- ifelse(seg2$gene %in% c("wbaP*", "wzy*"), "maroon", "navy")
+
+dna_segs <- list(seg2, seg1)
+
+
+
+annot1 <- auto_annotate(seg1)
+annot2 <- auto_annotate(seg2)
+
+# Combine them into a list for the plotting function
+annotations <- list(annot2, annot1)
+
+comparisons <- read_comparison_from_blast("KL102_vs_disrupted.crunch.txt")
+
+# colour the homology regions grey
+comparisons$col <- "darkgray" 
+
+pdf("KL102_comparison.pdf", width=9,height=3)
+
+plot_gene_map(
+  dna_segs = dna_segs,
+  comparisons = list(comparisons),
+  gene_type = "arrows", 
+  dna_seg_scale=T,
+  annotations = annotations, 
+  annotation_height = 2, 
+  annotation_cex = 0.75,
+  dna_seg_labels = list("a) Disrupted", "b) Wildtype")
+)
+
+dev.off()
 
 ```
