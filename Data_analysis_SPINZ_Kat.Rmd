@@ -1419,7 +1419,8 @@ clusters_df %>%
   scale_fill_manual(values=c("grey", "maroon", "navy")) + theme_bw() + theme(axis.text.x = element_text(angle=60, hjust=1))
 
 
-pre <- clusters_df %>% filter(`Study timepoint`=="Baseline") %>%
+pre <- clusters_df %>% filter(`Study timepoint`=="Baseline" | clusterid %in% c("ST307 1", "ST307 3")) %>%
+  filter(clusterid !="ST101 1") %>%
   filter(clusterid != "Missing data" & clusterid !="NC") %>% 
   mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
   mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
@@ -1428,7 +1429,8 @@ pre <- clusters_df %>% filter(`Study timepoint`=="Baseline") %>%
   facet_wrap(~clusterid, scales="free_y") + 
   scale_fill_manual(values=c("grey", "maroon", "navy")) + theme_bw() + theme(axis.text.x = element_text(angle=60, hjust=1)) + ggtitle("Baseline")
 
-post <- clusters_df %>% filter(`Study timepoint`!="Baseline") %>%
+post <- clusters_df %>% 
+  filter(`Study timepoint`!="Baseline" & !(clusterid %in% c("ST307 1", "ST307 3"))) %>%
   filter(clusterid != "Missing data" & clusterid !="NC") %>% 
   mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
   mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
@@ -1439,7 +1441,7 @@ post <- clusters_df %>% filter(`Study timepoint`!="Baseline") %>%
 
 pre / post + plot_layout(guides="collect")
 
-ggsave("pre_post_cluster_traits.pdf", width=6, height=9)
+ggsave("pre_post_cluster_traits.pdf", width=6, height=7)
 
 
 clusters_df %>% group_by(`Study timepoint`, onset_earlylate) %>% count()
@@ -1458,7 +1460,9 @@ clusters_df %>%
   theme(axis.text.x = element_text(angle=60, hjust=1)) 
 
 
-pre <- clusters_df %>% filter(`Study timepoint`=="Baseline") %>%
+pre <- clusters_df %>% 
+  filter(`Study timepoint`=="Baseline" | clusterid %in% c("ST307 1", "ST307 3")) %>%
+  filter(clusterid !="ST101 1") %>%
   filter(clusterid != "Missing data" & clusterid !="NC") %>% 
   mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
   mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
@@ -1472,7 +1476,8 @@ pre <- clusters_df %>% filter(`Study timepoint`=="Baseline") %>%
   theme(axis.text.x = element_text(angle=60, hjust=1)) + ggtitle("Baseline")
 
 
-post <- clusters_df %>% filter(`Study timepoint`!="Baseline") %>%
+post <- clusters_df %>% 
+  filter(`Study timepoint`!="Baseline" & !(clusterid %in% c("ST307 1", "ST307 3"))) %>%
   filter(clusterid != "Missing data" & clusterid !="NC") %>% 
   mutate(`Birth location`=fct_relevel(`Birth location`, "UTH born", "Outborn", "Unknown")) %>%
   mutate(onset_earlylate=fct_relevel(onset_earlylate, "Unknown", "Early", "Late")) %>%
@@ -1488,7 +1493,7 @@ post <- clusters_df %>% filter(`Study timepoint`!="Baseline") %>%
 
 pre / post + plot_layout(guides="collect")
 
-ggsave("pre_post_cluster_days.pdf", width=6, height=9)
+ggsave("pre_post_cluster_days.pdf", width=6, height=7)
 
 ```
 
