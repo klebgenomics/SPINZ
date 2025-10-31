@@ -1105,19 +1105,6 @@ nrow(kleb_clin)
 # Number of STs, with one case of ST307-1LV grouped into ST307 
 kleb_clin %>% mutate(`Sequence type` = ifelse(`Sequence type` == "ST307-1LV", "ST307", `Sequence type`)) %>% group_by(`Sequence type`) %>% count() %>% nrow() 
 
-# Create additional columns which categorize 'days to onset' 
-kleb_clin <- kleb_clin %>%
-  mutate(days_to_onset_cat = case_when(
-    is.na(`Days to onset`) ~ "Unknown",
-    `Days to onset` < 0  ~ "Unknown",   
-    `Days to onset` >= 8  ~ "8+ days",  
-    TRUE ~ as.character(`Days to onset`))) %>%
-  mutate(onset_earlylate = case_when(
-    days_to_onset_cat %in% c("0", "1", "2") ~ "Early",
-    days_to_onset_cat == "Unknown" ~ "Unknown",
-    TRUE ~ "Late"
-  )) 
-
 # Proportions of each ST (of ≥4 genomes)
 ST_prop <- kleb_clin %>%
   count(`Sequence type category`) %>% # counts occurrences of each ST
