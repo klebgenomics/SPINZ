@@ -4,9 +4,9 @@ Genomic analysis to assess the impact of an infection control bundle on _K. pneu
 
 This repository includes data and code from the paper 'Transmission dynamics of _Klebsiella pneumoniae_ in a neonatal intensive care unit in Zambia before and after an infection control bundle', Phillips LT et al, MedRxiv 2025.
 
-Output phylogenetic trees are in output_trees/, single nucleotide variant distances are in output_snv_distances/ and cluster estimates in output_clusters/
+Output phylogenetic trees are in `output_trees/`, single nucleotide variant distances are in `output_snv_distances/` and cluster estimates in `output_clusters/`
 
-Additional data needed to create figures or tables is in data/ 
+Additional data needed to create figures or tables is in `data/` 
 
 ## Figures and tables from the paper
 
