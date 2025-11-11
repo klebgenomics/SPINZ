@@ -255,7 +255,7 @@ all_t_tree$data$`Sequence type category` <- factor(all_t_tree$data$`Sequence typ
 # Plot
 fig1 <- plot_grid(all_t_tree, hm_allst, align = "h", axis = "bt", ncol = 2, nrow = 1, rel_widths = c(1, 1.5))
 
-#ggsave("Figure_1.png", width=12, height=10)
+#ggsave("figures/Figure_1.png", width=12, height=10)
 
 ```
 ## Figure 2
@@ -313,7 +313,7 @@ bar_chart_st2 <- bar_chart_st +
 
 fig2 <- timevcase_all_st / bar_chart_st2 + plot_annotation(tag_levels = "A")
 
-#ggsave("Figure_2_new.png", width=8, height=8)
+#ggsave("figures/Figure_2.png", width=8, height=8)
 
 ```
 ## Phylogenetic trees ST307, ST2004 and ST101
@@ -452,7 +452,7 @@ st307_t$data <- left_join(st307_t$data, ordered_data307, by = c("label" = "Read 
 st307_t_labs <- st307_t + geom_tippoint(aes(color=Cluster), size=2, shape = 21, fill = "white", stroke = 2) + scale_colour_manual(values = clusters_cols, name = "") + labs(title = 'ST307') + guides(color = "none") + theme_tree2() 
 
 # Plot
-fig5a <- (st307_t_labs + hm_plot + hm_plot2 + plot307) +
+fig4a <- (st307_t_labs + hm_plot + hm_plot2 + plot307) +
   plot_layout(ncol = 4) &
   theme(legend.position = "right")
 
@@ -562,7 +562,7 @@ st101_t$data <- left_join(st101_t$data, ordered_data101, by = c("label" = "Read 
 st101_t_labs <- st101_t + geom_tippoint(aes(color=Cluster), size=2, shape = 21, fill = "white", stroke = 2) + scale_colour_manual(values = clusters_cols, name = "") + labs(title = "ST101") +
   guides(color = "none") + theme_tree2() 
 
-fig5b <- (st101_t_labs + hm101 + hm101_2 + plot101) +
+fig4b <- (st101_t_labs + hm101 + hm101_2 + plot101) +
   plot_layout(ncol = 4, ) &
   theme(legend.position = "none")
 
@@ -674,14 +674,14 @@ st2004_t$data <- left_join(st2004_t$data, ordered_data2004, by = c("label" = "Re
 st2004_t_labs <- st2004_t + geom_tippoint(aes(color=Cluster), size = 2, shape = 21, fill = "white", stroke = 2) + scale_colour_manual(values = clusters_cols, name = "") + labs(title = "ST2004") + guides(color = "none") + theme_tree2()
 
 # Plot
-fig5c <- (st2004_t_labs + hm2004 + hm2004_2 + plot2004) +
+fig4c <- (st2004_t_labs + hm2004 + hm2004_2 + plot2004) +
   plot_layout(ncol = 4) &
   theme(legend.position = "none")
 
 # Final joint plot
-fig5_all <- fig5a / fig5b /fig5c + plot_layout(guides = "collect", heights = c(2, 2, 1)) 
+fig4_all <- fig4a / fig4b /fig4c + plot_layout(guides = "collect", heights = c(2, 2, 1))
 
-#ggsave("Figure_5_new.png", width=10, height=12)
+#ggsave("figures/Figure_4.png", width=10, height=12)
 
 ```
 ## Supplementary figure 4
@@ -807,7 +807,7 @@ fig_s4 <- (other_st_amr + other_hm2 + plot_others ) +
   plot_layout(ncol = 3, guides = "collect", widths = c(3, 0.5, 3)) &
   theme(legend.position = "right")
 
-#ggsave("Supplementary_figure_4_new.png", width=10, height=10)
+ggsave("figures/Supplementary_figure_4.png", width=10, height=10)
 
 ```
 ## Stats and summary numbers 
@@ -1141,7 +1141,7 @@ model3_tab <- tbl_regression(model3, exponentiate = TRUE) %>% add_global_p()
 
 
 ```
-## Figure 3 A & B
+## Figure 3 
 ```{r}
 
 # Add a column which captures ST and cluster number combinations - then add cluster_timepoint column which captures the starting timepoint of the overall cluster (rather than some clusters having both baseline and post-implementation cases)
@@ -1184,11 +1184,11 @@ p_baseline <- clusters_df %>%
   ggplot(aes(x = `Birth location`, fill = onset_group)) +
   #geom_histogram(position = "identity", alpha = 0.5, bins = 30, binwidth = 1, color = "black") +
   geom_bar(position = "stack") +
-  scale_fill_manual(values = c("Rapid" = "#fa9fb5", "Delayed" = "#2ca25f", "Unknown" = "grey"), name = "Onset category") +
+  scale_fill_manual(values = c("Rapid" = "#c51b8a", "Delayed" = "#08306b", "Unknown" = "grey"), name = "Onset category") +
   labs(x = "", y = "Count", title = "Baseline") +
   #scale_y_continuous(breaks = function(x) floor(seq(0, max(x), by = 1))) +
   #scale_y_continuous(labels = function(x) floor(x)) + #forces all labels to display as whole numbers
-  facet_wrap(~ ST_cluster, nrow = 4, ncol = 4, scales = "free_y") +
+  facet_wrap(~ ST_cluster, nrow = 4, ncol = 3, scales = "free_y") +
   theme_bw() +
   theme(axis.text.x = element_text(angle=60, hjust=1)) 
 
@@ -1201,11 +1201,11 @@ p_pi <- clusters_df %>%
   ggplot(aes(x = `Birth location`, fill = onset_group)) +
   #geom_histogram(position = "identity", alpha = 0.5, bins = 30, binwidth = 1, color = "black") +
   geom_bar(position = "stack") +
-  scale_fill_manual(values = c("Rapid" = "#fa9fb5", "Delayed" = "#2ca25f", "Unknown" = "grey"), name = "Onset category") +
+  scale_fill_manual(values = c("Rapid" = "#c51b8a", "Delayed" = "#08306b", "Unknown" = "grey"), name = "Onset category") +
   labs(x = "Birth location", y = "Count", title = "Post-implementation") +
   #scale_y_continuous(breaks = function(x) floor(seq(0, max(x), by = 1))) +
   #scale_y_continuous(labels = function(x) floor(x)) + #forces all labels to display as whole numbers
-  facet_wrap(~ ST_cluster, nrow = 4, ncol = 4, scales = "free_y") +
+  facet_wrap(~ ST_cluster, nrow = 4, ncol = 3, scales = "free_y") +
   theme_bw() +
   theme(legend.position = "none", axis.text.x = element_text(angle=60, hjust=1)) 
 
@@ -1215,7 +1215,7 @@ fig_3_new <- p_baseline / p_pi +
   plot_layout(guides = "collect") &
   theme(legend.position = "bottom")    # Optional: shared legend position
   
-#ggsave("Figure_3_new.png", width=8, height=8)
+#ggsave("figures/Figure_3.png", width=8, height=8)
 
 
 ```
@@ -1269,7 +1269,7 @@ plot307_b <- ordered_data307_cult %>%
 ## supplementary figure 3
 Figure_s3b <- plot307_b / plot307_a + plot_annotation(tag_levels = "A")
 
-#ggsave("Supplementary_figure_3_new.png", width=8, height=8)
+ggsave("figures/Supplementary_figure_3.png", width=8, height=8)
 
 ```
 ## Genetic comparison of baseline and post-implementation strains - ST307, ST101, ST2004
@@ -1598,7 +1598,7 @@ amr_mean_plot <- ggplot(amr_genes_long, aes(x = genes, y = mean, fill = `Study t
     fill = "Timepoint"
   ) +
   scale_fill_manual(values = c("Baseline" = "#67a9cf", "Post-implementation" = "#ef8a62"), labels = c("Baseline", "Post-implementation")) + # Custom colors
-  scale_x_discrete(labels = c("a_gly_acquired_r_mean" = "Aminoglycoside", "Col_acquired_r_mean" = "Colistin", "Fcyn_acquired_r_mean" = "Fosfomycin", "flq_acquired_r_mean" = "Fluoroquinolone", "Gly_acquired_r_mean" = "glycopeptide", "mls_acquired_r_mean" = "Macrolide", "Phe_acquired_r_mean" = "Phenicol", "Rif_acquired_r_mean" = "Rifampicin", "sul_acquired_r_mean" = "Sulfonamide", "tet_acquired_r_mean" = "Tetracycline", "Tgc_acquired_r_mean" = "Tigecycline", "tmt_acquired_r_mean" = "Trimethoprim", "bla_acquired_r_mean" = "Bla", "bla_esbl_acquired_r_mean" = "Bla-ESBL", "bla_carb_acquired_r_mean" = "Carbapenem")) +
+  scale_x_discrete(labels = c("a_gly_acquired_r_mean" = "Aminoglycosides", "Col_acquired_r_mean" = "Colistin", "Fcyn_acquired_r_mean" = "Fosfomycin", "flq_acquired_r_mean" = "Fluoroquinolones", "Gly_acquired_r_mean" = "glycopeptides", "mls_acquired_r_mean" = "Macrolides", "Phe_acquired_r_mean" = "Phenicols", "Rif_acquired_r_mean" = "Rifampicin", "sul_acquired_r_mean" = "Sulfonamides", "tet_acquired_r_mean" = "Tetracyclines", "Tgc_acquired_r_mean" = "Tigecycline", "tmt_acquired_r_mean" = "Trimethoprim", "bla_acquired_r_mean" = "Penicillins", "bla_esbl_acquired_r_mean" = "3rd generation cephalosporins", "bla_carb_acquired_r_mean" = "Carbapenems")) +
   theme_classic() + # A clean theme
   theme(
     axis.text.x = element_text(angle = 60,  hjust= 1), # Rotate x-axis labels
@@ -1610,7 +1610,7 @@ amr_mean_plot <- ggplot(amr_genes_long, aes(x = genes, y = mean, fill = `Study t
 k_o_prev_plots <- k_prev_plot / o_prev_plot / amr_mean_plot + plot_annotation(tag_levels = "A") + plot_layout(guides = "collect") & theme(legend.position = "bottom") 
 
 
-#ggsave("../../SPINZ/Results&plots/Figure_4_new.png", width=8, height=10)
+#ggsave("figures/Figure_5.png", width=8, height=10)
 
 ```
 ## Supplementary figure 5
@@ -1641,7 +1641,7 @@ comparisons <- read_comparison_from_blast("data/KL102_vs_disrupted.crunch.txt")
 # colour the homology regions grey
 comparisons$col <- "darkgray" 
 
-#pdf("Supplementary_figure_5.pdf", width=9,height=3)
+#pdf("figures/Supplementary_figure_5.pdf", width=9,height=3)
 
 plot_gene_map(
   dna_segs = dna_segs,
@@ -1709,7 +1709,7 @@ subset_st101_t + geom_tiplab(aes(label = custom_label), nudge_x = 0.2, size = 3)
   theme(axis.text.x = element_text(angle = 90, hjust = 1),  axis.title.x = element_blank(), axis.title.y = element_blank(), axis.text.y.left = element_text(), legend.position = "none") +
   coord_cartesian(clip = "off")
 
-#ggsave("Supplementary_figure_7.png", width=8, height=4)
+#ggsave("figures/Supplementary_figure_7.png", width=8, height=4)
 
 ```
 ## Bonus AMR upset plot 
