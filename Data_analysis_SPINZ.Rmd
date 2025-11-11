@@ -199,7 +199,7 @@ table_2 <- summary_tab %>%
 table_2
 ```
 ## Figure 1
-```{r}
+```{r, warning=FALSE}
 
 # Load pathogenwatch tree of all genomes
 all_st_tree <- read.tree("output_trees/pathogenwatch_allst_nj_tree.nwk") %>% midpoint.root() 
@@ -254,6 +254,8 @@ all_t_tree$data$`Sequence type category` <- factor(all_t_tree$data$`Sequence typ
 
 # Plot
 fig1 <- plot_grid(all_t_tree, hm_allst, align = "h", axis = "bt", ncol = 2, nrow = 1, rel_widths = c(1, 1.5))
+
+fig1
 
 #ggsave("figures/Figure_1.png", width=12, height=10)
 
@@ -313,11 +315,12 @@ bar_chart_st2 <- bar_chart_st +
 
 fig2 <- timevcase_all_st / bar_chart_st2 + plot_annotation(tag_levels = "A")
 
+fig2
 #ggsave("figures/Figure_2.png", width=8, height=8)
 
 ```
 ## Phylogenetic trees ST307, ST2004 and ST101
-```{r}
+```{r, warning=FALSE}
 st307 <- read.tree("output_trees/final_st307_bootstrapped_tree.tre") %>% midpoint.root() 
 
 st307_tips <- as.data.frame(get_taxa_name(ggtree(st307))) %>% setNames('st307_tips')
@@ -335,7 +338,7 @@ st2004_t <- ggtree(st2004) #+ geom_treescale(x = 0, y = 0, width = 5, fontsize =
 
 ```
 ## Figure 4 
-```{r}
+```{r, warning=FALSE}
 
 ######### ST307 #########
 
@@ -681,11 +684,12 @@ fig4c <- (st2004_t_labs + hm2004 + hm2004_2 + plot2004) +
 # Final joint plot
 fig4_all <- fig4a / fig4b /fig4c + plot_layout(guides = "collect", heights = c(2, 2, 1))
 
+fig4_all
 #ggsave("figures/Figure_4.png", width=10, height=12)
 
 ```
 ## Supplementary figure 4
-```{r}
+```{r, warning=FALSE}
 
 ######### 'Other' sequence types #########
 
@@ -807,7 +811,8 @@ fig_s4 <- (other_st_amr + other_hm2 + plot_others ) +
   plot_layout(ncol = 3, guides = "collect", widths = c(3, 0.5, 3)) &
   theme(legend.position = "right")
 
-ggsave("figures/Supplementary_figure_4.png", width=10, height=10)
+fig_s4
+#ggsave("figures/Supplementary_figure_4.png", width=10, height=10)
 
 ```
 ## Stats and summary numbers 
@@ -995,7 +1000,7 @@ pi_stats <- weekly_infection_stats_pi(kleb_clin, sequence_list_pi)
 
 ```
 ## Clustering summary numbers
-```{r}
+```{r, warning=FALSE}
 
 # Combine cluster data for each relevant ST 
 clusters_df <- rbind(ordered_data307, ordered_data101, ordered_data2004, other_st_kleb) 
@@ -1214,13 +1219,14 @@ fig_3_new <- p_baseline / p_pi +
   plot_annotation(tag_levels = 'A') +  # Adds 'A', 'B' labels
   plot_layout(guides = "collect") &
   theme(legend.position = "bottom")    # Optional: shared legend position
-  
+
+fig_3_new
 #ggsave("figures/Figure_3.png", width=8, height=8)
 
 
 ```
 ## Supplementary figure 3
-```{r}
+```{r, warning=FALSE}
 
 # Plot of ST307 clusters based on date of culture if available, and date of admission if not
 plot307_a <- ordered_data307 %>%
@@ -1269,7 +1275,9 @@ plot307_b <- ordered_data307_cult %>%
 ## supplementary figure 3
 Figure_s3b <- plot307_b / plot307_a + plot_annotation(tag_levels = "A")
 
-ggsave("figures/Supplementary_figure_3.png", width=8, height=8)
+Figure_s3b
+
+#ggsave("figures/Supplementary_figure_3.png", width=8, height=8)
 
 ```
 ## Genetic comparison of baseline and post-implementation strains - ST307, ST101, ST2004
@@ -1357,24 +1365,6 @@ summary_stats_st2004 <- data.frame(
   mean = mean(dist_vector_st2004, na.rm = TRUE)
 )
 
-#Can we compare the inborn/outborn and Rapid/late onset status for the neonates in the pre- and #post-implementation clusters for these potentially persisting clones (ST101 and ST2004)?
-
-st_clusters <- clusters_df %>% ## change ST of interest  - summarises all clusters for that ST
-  filter(`Sequence type category` == c("ST2004", "ST101"),
-         !onset_group %in% c("Unknown"),
-         !Cluster %in% c("NC"))
-
-table(st_clusters$`Study timepoint`, st_clusters$onset_group, st_clusters$`Sequence type category`)
-
-  
-  
-st_clusters <- clusters_df %>% ## change ST of interest  - summarises all clusters for that ST
-  filter(`Sequence type category` == c("ST2004", "ST101"),
-         !`Birth location` %in% c("Unknown"),
-         !Cluster %in% c("NC"))
-         
-  
-table(st_clusters$`Study timepoint`, st_clusters$`Birth location`,  st_clusters$`Sequence type category`)
 ```
 ## Figure 5
 ```{r}
@@ -1609,12 +1599,13 @@ amr_mean_plot <- ggplot(amr_genes_long, aes(x = genes, y = mean, fill = `Study t
 
 k_o_prev_plots <- k_prev_plot / o_prev_plot / amr_mean_plot + plot_annotation(tag_levels = "A") + plot_layout(guides = "collect") & theme(legend.position = "bottom") 
 
+k_o_prev_plots
 
 #ggsave("figures/Figure_5.png", width=8, height=10)
 
 ```
 ## Supplementary figure 5
-```{r}
+```{r, warning=FALSE}
 
 # genbank file of reference KL102 locus, and example of a disrupted KL102 locus
 seg1 <- read_dna_seg_from_genbank("data/KL102.gbk")
@@ -1659,12 +1650,12 @@ dev.off()
 
 ```
 ## Supplementary figure 7
-```{r}
+```{r, warning=FALSE}
 
 # Trimmed two genetically distant and NC genomes from the tree 
 st101_trimmed <- drop.tip(st101, c("ERR6350131", "ERR6350206"))
 
-st101_t_trimmed <- ggtree(st101_trimmed) + geom_tiplab(size = 2)
+st101_t_trimmed <- ggtree(st101_trimmed) 
 
 # Join to ST101 metadata
 st101_t_trimmed$data <- left_join(st101_t_trimmed$data, ordered_data101, by = c("label" = "Read accession")) 
@@ -1700,7 +1691,7 @@ dist_long$ID1 <- factor(dist_long$ID1, levels = tip_order)
 dist_long$ID2 <- factor(dist_long$ID2, levels = tip_order)
 
 # Plot
-subset_st101_t + geom_tiplab(aes(label = custom_label), nudge_x = 0.2, size = 3) + ggplot(dist_long, aes(x = ID2, y = ID1, fill = SNV_dist)) +
+tree_hm <- subset_st101_t + geom_tiplab(aes(label = custom_label), nudge_x = 0.2, size = 3) + ggplot(dist_long, aes(x = ID2, y = ID1, fill = SNV_dist)) +
   geom_tile(width = 0.9, height = 0.9) +
   geom_text(aes(label = round(SNV_dist, 1)), size = 4, colour = "darkgrey") +
   scale_x_discrete(name = "Sample ID") +
@@ -1709,6 +1700,7 @@ subset_st101_t + geom_tiplab(aes(label = custom_label), nudge_x = 0.2, size = 3)
   theme(axis.text.x = element_text(angle = 90, hjust = 1),  axis.title.x = element_blank(), axis.title.y = element_blank(), axis.text.y.left = element_text(), legend.position = "none") +
   coord_cartesian(clip = "off")
 
+tree_hm
 #ggsave("figures/Supplementary_figure_7.png", width=8, height=4)
 
 ```
@@ -1716,9 +1708,8 @@ subset_st101_t + geom_tiplab(aes(label = custom_label), nudge_x = 0.2, size = 3)
 ```{r}
 
 # Load binary presence/absence of resistance genes data per genome
-all_res_binary <- read_csv("../../SPINZ/res_subset_seperated_binary.csv") %>% select(-all_of(c("-"))) %>% select_if(~ any(. != 0)) %>% select(-all_of(c("strB.v1", "strA.v1", "yersiniabactin"))) %>%
+all_res_binary <- read_csv("data/res_subset_seperated_binary.csv") %>% select(-all_of(c("-"))) %>% select_if(~ any(. != 0)) %>% select(-all_of(c("strB.v1", "strA.v1"))) %>%
   select_if(~ !all(is.na(.))) %>% 
-   #mutate(yersiniabactin = ifelse(yersiniabactin == "-", 0, 1)) %>%
   mutate(across(everything(), as.character))
 
 # Create a lookup table that maps resistance markers to an antibiotic class
