@@ -10,7 +10,7 @@ Additional data needed to create figures or tables is in `data/`
 
 ## Figures and tables from the paper
 
-The directories `figures/` and `tables/` contain all the figures and tables from the paper, including supplementary. The code to generate these is in the Data_analysis_SPINZ.Rmd R markdown file, and a knitR file showing the executed code is in Data_analysis_SPINZ.html
+The directories `figures/` and `tables/` contain all the figures and tables from the paper, including supplementary. The code to generate these is in the `Data_analysis_SPINZ.Rmd` R markdown file, and a knitR file showing the executed code is in `Data_analysis_SPINZ.html`.
 
 ## Citation
 
