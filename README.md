@@ -14,6 +14,8 @@ The directories `figures/` and `tables/` contain all the figures and tables from
 
 ## Citation
 
-If you use the data, code, figures or tables presented here please cite the below paper and this repository.
+If you use the data, code, figures or tables presented here please cite the below paper and this repository via DOI: 10.5281/zenodo.17589084.
 
 Phillips LT et al, 'Transmission dynamics of _Klebsiella pneumoniae_ in a neonatal intensive care unit in Zambia before and after an infection control bundle', 2025, MedRxiv.
+
+[![DOI](https://zenodo.org/badge/1041346507.svg)](https://doi.org/10.5281/zenodo.17589084)
